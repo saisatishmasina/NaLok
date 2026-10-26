@@ -5,6 +5,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +33,7 @@ public class StudySessionService {
      */
     private static final String ACTIVE_SESSION_GUARD = "nalok:active-session";
     private static final int GUARD_TIMEOUT_SECONDS = 10;
+    private static final int MAX_HISTORY_PAGE_SIZE = 100;
 
     private final StudySessionRepository studySessionRepository;
     private final ProjectService projectService;
@@ -56,6 +60,24 @@ public class StudySessionService {
 
     public List<StudySession> listSessions(StudySessionStatus status) {
         return studySessionRepository.findByStatus(status);
+    }
+
+    /**
+     * Bounded, newest-first history for UI lists. Null status = all sessions.
+     * Page size is capped so a careless client cannot request an unbounded list.
+     */
+    public Page<StudySession> listSessionHistory(StudySessionStatus status, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_HISTORY_PAGE_SIZE);
+
+        PageRequest pageRequest = PageRequest.of(safePage, safeSize,
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("id")));
+
+        if (status == null) {
+            return studySessionRepository.findAll(pageRequest);
+        }
+
+        return studySessionRepository.findByStatus(status, pageRequest);
     }
 
     @Transactional

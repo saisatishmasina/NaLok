@@ -6,7 +6,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -19,6 +24,7 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
 
 import com.shaktee.nalok.knowledge.study.model.StudySession;
 import com.shaktee.nalok.knowledge.study.model.StudySessionStatus;
@@ -178,6 +184,63 @@ class StudySessionIntegrationTest {
     void unknownSessionIsRejected() {
         assertThatThrownBy(() -> studySessionService.getSession(UUID.randomUUID()))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void historyIsPaginatedDisjointAndCapped() {
+        List<UUID> createdIds = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            createdIds.add(studySessionService
+                    .createSession("History " + i, null, null)
+                    .getId());
+        }
+
+        Page<StudySession> page0 = studySessionService.listSessionHistory(null, 0, 10);
+        Page<StudySession> page1 = studySessionService.listSessionHistory(null, 1, 10);
+        Page<StudySession> page2 = studySessionService.listSessionHistory(null, 2, 10);
+
+        assertThat(page0.getContent()).hasSize(10);
+        assertThat(page0.getTotalElements()).isGreaterThanOrEqualTo(12);
+
+        // Each page is exactly newest-first, id as the stable tie-breaker.
+        Comparator<StudySession> newestFirst =
+                Comparator.comparing(StudySession::getCreatedAt, Comparator.reverseOrder())
+                        .thenComparing(StudySession::getId);
+        assertThat(page0.getContent()).isSortedAccordingTo(newestFirst);
+        assertThat(page1.getContent()).isSortedAccordingTo(newestFirst);
+
+        // Pages never overlap.
+        List<UUID> page0Ids = page0.getContent().stream()
+                .map(StudySession::getId).toList();
+        List<UUID> page1Ids = page1.getContent().stream()
+                .map(StudySession::getId).toList();
+        assertThat(page0Ids).doesNotContainAnyElementsOf(page1Ids);
+
+        // Every session created here is reachable through the paged history.
+        Set<UUID> reachable = new HashSet<>(page0Ids);
+        reachable.addAll(page1Ids);
+        page2.getContent().stream().map(StudySession::getId).forEach(reachable::add);
+        assertThat(reachable).containsAll(createdIds);
+
+        // Oversized request is capped at MAX_HISTORY_PAGE_SIZE.
+        Page<StudySession> capped = studySessionService.listSessionHistory(null, 0, 500);
+        assertThat(capped.getSize()).isEqualTo(100);
+        assertThat(capped.getContent().size()).isLessThanOrEqualTo(100);
+    }
+
+    @Test
+    void historyFiltersByStatus() {
+        StudySession finished = studySessionService.createSession("Will finish", null, null);
+        studySessionService.startSession(finished.getId());
+        studySessionService.finishSession(finished.getId());
+
+        Page<StudySession> completed = studySessionService.listSessionHistory(
+                StudySessionStatus.COMPLETED, 0, 50);
+
+        assertThat(completed.getContent())
+                .isNotEmpty()
+                .allSatisfy(session ->
+                        assertThat(session.getStatus()).isEqualTo(StudySessionStatus.COMPLETED));
     }
 
     @Test

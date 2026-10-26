@@ -1,27 +1,20 @@
 # Current task
 
-ID: S01+S02 (Study start)
+ID: S03 (Study persistence/service hardening)
 State: COMPLETE
-Goal: Make StudySession compile; map the optional context reference; complete standalone session lifecycle with deterministic timing, auto-pause and recovery.
+Goal: Paginated bounded session history, optimistic-lock conflict protection on Project and StudySession, context-validation review.
 
 ## Scope — met
-1. Reference mapping (S01): EntityReference embeddable (world/reference), type+UUID, both-or-neither; stored as context_type/context_id on studysessions; null and non-null MySQL round trips proven.
-2. Lifecycle (S02): fixed compile blockers (validateTitle, nonexistent enum constant, inverted pause math, missing completedAt); states PLANNED/ACTIVE/PAUSED/COMPLETED; explicit-Instant model transitions; version column now a real @Version.
-
-## Decisions recorded
-- D06: one focused session globally; starting/resuming auto-pauses the previous ACTIVE session.
-- D07: interrupted-session recovery via explicit recoverInterrupted (closes open leg at recovery time; crash gap counts as active work — limitation documented).
+1. Pagination: StudySessionRepository.findByStatus(status, Pageable); service listSessionHistory(status, page, size) — newest-first with id tie-break, page size capped at 100, null status = all sessions; dashboard "recent sessions" covered by findAll.
+2. Optimistic locking: Project now has @Version (known limitation resolved); conflict tests prove a stale detached update throws ObjectOptimisticLockingFailureException and the first write wins, for both entities.
+3. Context validation review: unchanged by design — creation-time existence check via Projects module API (projectExists/sectionExists); EntityReference itself forbids type-without-id; dangling references after target deletion remain the documented open decision.
 
 ## Verification evidence
 - Commands: `./mvnw compile`, `./mvnw test`, `./mvnw verify`, `git diff --check`.
-- Results: BUILD SUCCESS; Tests run: 63, Failures: 0, Errors: 0, Skipped: 0.
-- Test isolation: committed test config (placeholders only) + TestDatabaseGuard (environment post-processor, fails before Hibernate) + TestDatabaseIsolationTest; forced misconfigured run proved early rejection with no schema damage.
-- Concurrency: simultaneousStartsLeaveExactlyOneActiveSession (two threads released by a CyclicBarrier) and failedStartReleasesTheGuard (IS_USED_LOCK probe from a separate physical connection proves release after rollback and after commit).
-- Chronology: resume/start-from-paused/finish before paused_at rejected (model tests).
-
-## Incident (resolved during this task)
-First Study run used the personal `nalok` database (test config missing from main repo); test rows inserted and later verified-and-removed; `studysessions` table dropped. See STATUS incident record.
+- Results: BUILD SUCCESS; Tests run: 67, Failures: 0, Errors: 0, Skipped: 0.
+- Database: disposable nalok_opencode_test (create-drop), isolation guard active.
+- Three initial test-side failures were my own test bugs (merge-version semantics and tie-break assumptions), fixed and re-verified green.
 
 ## Next task
-ID: S03
-Goal: Study persistence/service hardening — pagination for session history, optimistic-lock conflict test (@Version), context validation review.
+ID: S04
+Goal: REST slice — DTOs for projects/study, create/start/pause/resume/finish endpoints, validation and error mapping; agree API contract with the frontend work.
