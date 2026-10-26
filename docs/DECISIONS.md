@@ -18,11 +18,23 @@ CRUD-only is an internal milestone.
 ## D05 — Desktop UI
 Planned Electron plus React/TypeScript; current repository implementation unknown.
 
+## D06 — Single focused study session
+Accepted 2026-10-26. One ACTIVE session globally. Starting or resuming a session
+while another is ACTIVE auto-pauses the previous one; its open active leg is
+closed with correct elapsed accounting before the new session becomes ACTIVE.
+Consequence: no concurrent time overlap; reports can assume non-overlapping legs.
+
+## D07 — Interrupted session recovery
+Accepted 2026-10-26. Transitions are persisted immediately, so a session left
+ACTIVE after a crash stays ACTIVE with its open active_since. An explicit
+recoverInterrupted operation closes the leg at recovery time and pauses.
+Limitation: time until recovery counts as active work; manual duration
+correction remains an open decision.
+
 ## Open decisions
-- Supported Java/Hibernate mapping for EntityReference.
+- EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
+- Manual correction of recorded study duration.
 - Initial note association cardinality and deletion policy.
-- Whether to allow multiple running sessions.
-- Interrupted session recovery and duration correction.
 - Desktop production database/packaging and backup path.
 - Initial supported reader/video sources.
 

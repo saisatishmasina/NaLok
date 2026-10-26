@@ -7,11 +7,18 @@ import org.springframework.context.annotation.Bean;
 
 import com.shaktee.nalok.world.event.WorldEvent;
 
+import java.time.Clock;
+
 @SpringBootApplication
 public class NalokApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(NalokApplication.class, args);
+    }
+
+    @Bean
+    Clock clock() {
+        return Clock.systemUTC();
     }
 
     @Bean

@@ -84,6 +84,10 @@ public class ProjectService {
 
     }
 
+    public boolean projectExists(UUID projectId) {
+        return projectRepository.existsById(projectId);
+    }
+
     private Project findProject(UUID projectId) {
         return projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found" + projectId));

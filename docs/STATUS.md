@@ -12,7 +12,7 @@
 - Current branch during Projects work: feat/Projects (worktree branch projects-work, pushed to origin/feat/Projects).
 - Java 21.0.13.0.2 (Homebrew); Spring Boot 4.1.1; Maven 3.9.16 via wrapper; MySQL 8.0.46 local server.
 - Database config uses ${DB_USERNAME}/${DB_PASSWORD} placeholders resolved from environment (user provides .env; credentials not stored in repo).
-- Tests run against disposable MySQL database nalok_opencode_test (create-drop), configured in gitignored src/test/resources/application.properties.
+- Tests run against disposable MySQL database nalok_opencode_test (create-drop), configured in gitignored src/test/resources/application.properties; credentials resolved from user-provided .env placeholders (never stored in repo).
 - No frontend, desktop UI, controllers, Notes or EntityReference implementation exists yet.
 
 ## Record after audit
@@ -25,7 +25,12 @@
 - Known limitations: enum value spelled ACIVE (persisted; kept this milestone); no REST layer; no optimistic locking on Project yet; Study/WorldEvent repository and service files empty.
 
 ## Latest completed task
-Projects backend milestone: fixed start() guard, createProject persistence, archive double-archive guard; added 30 tests covering model rules, service lifecycle, and real-MySQL persistence. Verification: `./mvnw test` and `./mvnw verify` both BUILD SUCCESS (Tests run: 30, Failures: 0, Errors: 0), `git diff --check` clean.
+Projects backend milestone (pushed to origin/feat/Projects, commit c02986c): fixed start() guard, createProject persistence, archive double-archive guard; 30 tests covering model rules, service lifecycle and real-MySQL persistence. Verification: `./mvnw test` and `./mvnw verify` BUILD SUCCESS (30/30), `git diff --check` clean.
+
+## Study progress (feat/Study, local)
+- S01 EntityReference embeddable mapped (context_type/context_id), both-or-neither enforced; MySQL round trips for absent, project and section contexts.
+- S02 StudySession lifecycle complete with explicit-Instant transitions, correct elapsed math, @Version optimistic locking, auto-pause of previous ACTIVE session (D06) and recoverInterrupted (D07).
+- Verification: `./mvnw test` and `./mvnw verify` BUILD SUCCESS (54/54: 30 Projects regression + 24 new), `git diff --check` clean.
 
 ## Next task
-S01 reference mapping and S02 Study lifecycle on a feat/Study branch. Study model currently does not compile (missing validateTitle, nonexistent StudySessionStatus.active, wrong pause duration direction, uninitialized version column).
+S03 Study persistence/service hardening (pagination, optimistic-lock conflict test, context validation review), then S04 REST slice.

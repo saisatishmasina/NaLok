@@ -1,0 +1,170 @@
+package com.shaktee.nalok.knowledge.study.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import com.shaktee.nalok.knowledge.study.model.StudySession;
+import com.shaktee.nalok.knowledge.study.model.StudySessionStatus;
+import com.shaktee.nalok.projects.model.Project;
+import com.shaktee.nalok.projects.model.ProjectSection;
+import com.shaktee.nalok.projects.service.ProjectSectionService;
+import com.shaktee.nalok.projects.service.ProjectService;
+import com.shaktee.nalok.world.reference.EntityReference;
+import com.shaktee.nalok.world.reference.EntityType;
+
+/**
+ * Runs against a disposable MySQL database (src/test/resources/application.properties).
+ * Covers S01 reference round trips and S02 lifecycle persistence.
+ */
+@SpringBootTest
+class StudySessionIntegrationTest {
+
+    @Autowired
+    private StudySessionService studySessionService;
+
+    @Autowired
+    private ProjectService projectService;
+
+    @Autowired
+    private ProjectSectionService sectionService;
+
+    @Test
+    void standaloneSessionRoundTripWithAbsentContext() {
+        StudySession created = studySessionService.createSession(
+                "Standalone", "no project", null);
+
+        StudySession reloaded = studySessionService.getSession(created.getId());
+        assertThat(reloaded.getTitle()).isEqualTo("Standalone");
+        assertThat(reloaded.getStatus()).isEqualTo(StudySessionStatus.PLANNED);
+        assertThat(reloaded.getContext()).isNull();
+        assertThat(reloaded.getActiveWorkTime()).isEqualTo(Duration.ZERO);
+    }
+
+    @Test
+    void projectContextRoundTrip() {
+        Project project = projectService.createProject("Context target", null);
+        StudySession created = studySessionService.createSession(
+                "For project", null,
+                EntityReference.of(EntityType.PROJECT, project.getId()));
+
+        StudySession reloaded = studySessionService.getSession(created.getId());
+        assertThat(reloaded.getContext()).isNotNull();
+        assertThat(reloaded.getContext().getEntityType()).isEqualTo(EntityType.PROJECT);
+        assertThat(reloaded.getContext().getReferenceId()).isEqualTo(project.getId());
+    }
+
+    @Test
+    void sectionContextRoundTrip() {
+        Project project = projectService.createProject("Section host", null);
+        ProjectSection section = sectionService.createSection(
+                project.getId(), "Chapter 1", null, 0);
+        StudySession created = studySessionService.createSession(
+                "For section", null,
+                EntityReference.of(EntityType.PROJECT_SECTION, section.getId()));
+
+        StudySession reloaded = studySessionService.getSession(created.getId());
+        assertThat(reloaded.getContext()).isNotNull();
+        assertThat(reloaded.getContext().getEntityType()).isEqualTo(EntityType.PROJECT_SECTION);
+        assertThat(reloaded.getContext().getReferenceId()).isEqualTo(section.getId());
+    }
+
+    @Test
+    void missingContextTargetIsRejected() {
+        assertThatThrownBy(() -> studySessionService.createSession(
+                "Broken", null, EntityReference.of(EntityType.PROJECT, UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> studySessionService.createSession(
+                "Broken", null, EntityReference.of(EntityType.PROJECT_SECTION, UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void lifecycleTransitionsPersist() {
+        StudySession created = studySessionService.createSession("Lifecycle", null, null);
+
+        studySessionService.startSession(created.getId());
+        StudySession running = studySessionService.getSession(created.getId());
+        assertThat(running.getStatus()).isEqualTo(StudySessionStatus.ACTIVE);
+        assertThat(running.getStartedAt()).isNotNull();
+        assertThat(running.getActiveSince()).isNotNull();
+
+        studySessionService.pauseSession(created.getId());
+        StudySession paused = studySessionService.getSession(created.getId());
+        assertThat(paused.getStatus()).isEqualTo(StudySessionStatus.PAUSED);
+        assertThat(paused.getActiveSince()).isNull();
+
+        studySessionService.finishSession(created.getId());
+        StudySession finished = studySessionService.getSession(created.getId());
+        assertThat(finished.getStatus()).isEqualTo(StudySessionStatus.COMPLETED);
+        assertThat(finished.getCompletedAt()).isNotNull();
+        assertThat(finished.getActiveWorkTime()).isGreaterThanOrEqualTo(Duration.ZERO);
+    }
+
+    @Test
+    void startingAnotherSessionAutoPausesTheActiveOne() throws Exception {
+        StudySession first = studySessionService.createSession("First", null, null);
+        StudySession second = studySessionService.createSession("Second", null, null);
+
+        studySessionService.startSession(first.getId());
+        Thread.sleep(50);
+        studySessionService.startSession(second.getId());
+
+        StudySession firstAfter = studySessionService.getSession(first.getId());
+        assertThat(firstAfter.getStatus()).isEqualTo(StudySessionStatus.PAUSED);
+        assertThat(firstAfter.getActiveSince()).isNull();
+        assertThat(firstAfter.getActiveWorkTime()).isGreaterThan(Duration.ZERO);
+
+        StudySession secondAfter = studySessionService.getSession(second.getId());
+        assertThat(secondAfter.getStatus()).isEqualTo(StudySessionStatus.ACTIVE);
+
+        List<StudySession> active = studySessionService.listSessions(StudySessionStatus.ACTIVE);
+        assertThat(active).extracting(StudySession::getId)
+                .containsExactly(second.getId());
+    }
+
+    @Test
+    void resumingAnotherSessionAlsoAutoPauses() throws Exception {
+        StudySession first = studySessionService.createSession("A", null, null);
+        StudySession second = studySessionService.createSession("B", null, null);
+
+        studySessionService.startSession(first.getId());
+        studySessionService.pauseSession(first.getId());
+        studySessionService.startSession(second.getId());
+        Thread.sleep(50);
+        studySessionService.resumeSession(first.getId());
+
+        StudySession secondAfter = studySessionService.getSession(second.getId());
+        assertThat(secondAfter.getStatus()).isEqualTo(StudySessionStatus.PAUSED);
+        assertThat(studySessionService.getSession(first.getId()).getStatus())
+                .isEqualTo(StudySessionStatus.ACTIVE);
+    }
+
+    @Test
+    void recoveryClosesInterruptedActiveLeg() throws Exception {
+        StudySession created = studySessionService.createSession("Interrupted", null, null);
+        studySessionService.startSession(created.getId());
+        Thread.sleep(50);
+
+        StudySession recovered = studySessionService.recoverInterrupted(created.getId());
+        assertThat(recovered.getStatus()).isEqualTo(StudySessionStatus.PAUSED);
+        assertThat(recovered.getActiveSince()).isNull();
+        assertThat(recovered.getActiveWorkTime()).isGreaterThan(Duration.ZERO);
+
+        assertThatThrownBy(() -> studySessionService.recoverInterrupted(created.getId()))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void unknownSessionIsRejected() {
+        assertThatThrownBy(() -> studySessionService.getSession(UUID.randomUUID()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+}

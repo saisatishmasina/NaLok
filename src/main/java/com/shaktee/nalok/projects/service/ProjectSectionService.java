@@ -71,6 +71,10 @@ public class ProjectSectionService {
         return section;
     }
 
+    public boolean sectionExists(UUID sectionId) {
+        return sectionRepository.existsById(sectionId);
+    }
+
     private Project findProject(UUID projectId) {
         return projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException(
