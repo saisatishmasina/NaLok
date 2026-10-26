@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -178,11 +179,16 @@ class StudySessionIntegrationTest {
         StudySession second = studySessionService.createSession("Concurrent B", null, null);
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(2);
         try {
-            Future<?> startFirst = pool.submit(
-                    () -> studySessionService.startSession(first.getId()));
-            Future<?> startSecond = pool.submit(
-                    () -> studySessionService.startSession(second.getId()));
+            Future<?> startFirst = pool.submit(() -> {
+                barrier.await(10, TimeUnit.SECONDS);
+                return studySessionService.startSession(first.getId());
+            });
+            Future<?> startSecond = pool.submit(() -> {
+                barrier.await(10, TimeUnit.SECONDS);
+                return studySessionService.startSession(second.getId());
+            });
 
             startFirst.get(30, TimeUnit.SECONDS);
             startSecond.get(30, TimeUnit.SECONDS);
@@ -199,5 +205,20 @@ class StudySessionIntegrationTest {
         assertThat(List.of(sessionA.getStatus(), sessionB.getStatus()))
                 .containsExactlyInAnyOrder(
                         StudySessionStatus.ACTIVE, StudySessionStatus.PAUSED);
+    }
+
+    @Test
+    void failedStartReleasesTheGuard() {
+        // startSession on an unknown id acquires the guard, then fails and
+        // rolls back. A leaked guard would make the next start time out (10s)
+        // and throw, failing this test.
+        assertThatThrownBy(() -> studySessionService.startSession(UUID.randomUUID()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        StudySession session = studySessionService.createSession("After failure", null, null);
+        studySessionService.startSession(session.getId());
+
+        assertThat(studySessionService.getSession(session.getId()).getStatus())
+                .isEqualTo(StudySessionStatus.ACTIVE);
     }
 }

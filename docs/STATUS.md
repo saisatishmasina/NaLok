@@ -35,14 +35,15 @@ Projects backend milestone (pushed to origin/feat/Projects, commit c02986c): fix
 Study S01+S02 (local commit 7e6e10a, then hardening fixes): EntityReference embeddable context with round trips; lifecycle with explicit-Instant transitions, correct elapsed math, @Version; single-focused-session rule enforced with a MySQL named-lock guard released after commit (D08); backward-dated resume/finish rejected via paused_at; test isolation guard added.
 
 ## Verification evidence (current)
-- `./mvnw test` and `./mvnw verify`: BUILD SUCCESS, Tests run: 58, Failures: 0, Errors: 0, Skipped: 0.
+- `./mvnw test` and `./mvnw verify`: BUILD SUCCESS, Tests run: 63, Failures: 0, Errors: 0, Skipped: 0.
 - `git diff --check`: clean.
 - Test reports confirm all Spring contexts connect to nalok_opencode_test only.
+- Guard ordering proven: a forced misconfigured run (`-Dspring.datasource.url=.../nalok`) failed in 0.3s at environment-postprocessing, before Hibernate, leaving the personal database untouched (no tables created).
 
 ## Study progress (feat/Study)
 - S01 EntityReference embeddable mapped (context_type/context_id), both-or-neither enforced; MySQL round trips for absent, project and section contexts.
 - S02 StudySession lifecycle with explicit-Instant transitions, correct elapsed math, @Version optimistic locking, auto-pause of previous ACTIVE session (D06), recoverInterrupted (D07), paused_at chronology checks, named-lock guard for concurrent starts (D08).
-- Known limitations: Project lacks @Version; ACIVE enum spelling retained; recoverInterrupted counts crash gap as active time.
+- Known limitations: Project lacks @Version; ACIVE enum spelling retained; recoverInterrupted counts crash gap as active time; test guard permits only nalok_opencode_test (by design).
 
 ## Next task
 S03 Study persistence/service hardening (pagination, optimistic-lock conflict test, context validation review), then S04 REST slice.

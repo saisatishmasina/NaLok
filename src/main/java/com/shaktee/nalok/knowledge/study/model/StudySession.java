@@ -95,14 +95,17 @@ public class StudySession {
     }
 
     public void start(Instant now) {
-        if (this.status != StudySessionStatus.PLANNED && this.status != StudySessionStatus.PAUSED) {
+        if (this.status == StudySessionStatus.PAUSED) {
+            // Same rules as resume: a paused restart may not predate the pause.
+            resume(now);
+            return;
+        }
+
+        if (this.status != StudySessionStatus.PLANNED) {
             throw new IllegalStateException("only planned or paused study sessions can be started");
         }
 
-        if (this.startedAt == null) {
-            this.startedAt = now;
-        }
-
+        this.startedAt = now;
         this.status = StudySessionStatus.ACTIVE;
         this.activeSince = now;
     }

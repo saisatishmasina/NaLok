@@ -1,6 +1,11 @@
 # Verification strategy
 Discover versions and project test configuration before copying any test annotations or dependencies.
 
+## Test environment requirements
+- Tests require DB_USERNAME and DB_PASSWORD in the environment (user provides via .env); committed test config holds placeholders only.
+- Tests are hard-guarded to the disposable nalok_opencode_test database: TestDatabaseGuard (environment post-processor) rejects any other datasource BEFORE Hibernate initializes; TestDatabaseIsolationTest re-checks at runtime.
+- Personal `nalok` database must never be used by tests; incident on 2026-10-26 recorded in STATUS.
+
 ## Per task
 1. Establish existing relevant baseline.
 2. Add tests for changed behavior and concrete failure risks.

@@ -139,6 +139,26 @@ class StudySessionTest {
     }
 
     @Test
+    void startFromPausedKeepsStartedAtAndValidatesPausedAt() {
+        StudySession session = new StudySession("Deep work", null, null);
+        session.start(T0);
+        session.pause(T0.plusSeconds(1800));
+
+        // Forward-dated restart behaves like resume.
+        session.start(T0.plusSeconds(3600));
+        assertThat(session.getStatus()).isEqualTo(StudySessionStatus.ACTIVE);
+        assertThat(session.getStartedAt()).isEqualTo(T0);
+        assertThat(session.getActiveSince()).isEqualTo(T0.plusSeconds(3600));
+
+        // Backward-dated restart is rejected exactly like a backward resume.
+        session.pause(T0.plusSeconds(5400));
+        assertThatThrownBy(() -> session.start(T0.plusSeconds(4500)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(session.getStatus()).isEqualTo(StudySessionStatus.PAUSED);
+        assertThat(session.getActiveWorkTime()).isEqualTo(Duration.ofSeconds(3600));
+    }
+
+    @Test
     void finishBeforePausedAtIsRejected() {
         StudySession session = new StudySession("Deep work", null, null);
         session.start(T0);

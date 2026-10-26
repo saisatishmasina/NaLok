@@ -14,10 +14,10 @@ Goal: Make StudySession compile; map the optional context reference; complete st
 
 ## Verification evidence
 - Commands: `./mvnw compile`, `./mvnw test`, `./mvnw verify`, `git diff --check`.
-- Results: BUILD SUCCESS; Tests run: 58, Failures: 0, Errors: 0, Skipped: 0.
-- Test isolation: committed test config (placeholders only) + TestDatabaseIsolationTest asserting SELECT DATABASE() = nalok_opencode_test; integration reports confirm nalok_opencode_test only.
-- Concurrency: simultaneousStartsLeaveExactlyOneActiveSession (two threads, guard lock).
-- Chronology: resume/finish before paused_at rejected (model tests).
+- Results: BUILD SUCCESS; Tests run: 63, Failures: 0, Errors: 0, Skipped: 0.
+- Test isolation: committed test config (placeholders only) + TestDatabaseGuard (environment post-processor, fails before Hibernate) + TestDatabaseIsolationTest; forced misconfigured run proved early rejection with no schema damage.
+- Concurrency: simultaneousStartsLeaveExactlyOneActiveSession (two threads released by a CyclicBarrier) and failedStartReleasesTheGuard (guard released after rollback).
+- Chronology: resume/start-from-paused/finish before paused_at rejected (model tests).
 
 ## Incident (resolved during this task)
 First Study run used the personal `nalok` database (test config missing from main repo); test rows inserted and later verified-and-removed; `studysessions` table dropped. See STATUS incident record.
