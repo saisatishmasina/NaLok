@@ -61,7 +61,7 @@ public class Project {
     }
 
     public void start() {
-        if (status != ProjectStatus.PLANNED || status != ProjectStatus.PAUSED) {
+        if (status != ProjectStatus.PLANNED && status != ProjectStatus.PAUSED) {
             throw new IllegalStateException("only planned or paused projects can be started");
         }
 
@@ -86,6 +86,10 @@ public class Project {
     }
 
     public void archive() {
+        if (status == ProjectStatus.ARCHIVED) {
+            throw new IllegalStateException("project is already archived");
+        }
+
         this.status = ProjectStatus.ARCHIVED;
     }
 
