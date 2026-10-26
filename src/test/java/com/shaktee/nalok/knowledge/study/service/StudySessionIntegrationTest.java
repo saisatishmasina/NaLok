@@ -6,6 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -166,5 +170,34 @@ class StudySessionIntegrationTest {
     void unknownSessionIsRejected() {
         assertThatThrownBy(() -> studySessionService.getSession(UUID.randomUUID()))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void simultaneousStartsLeaveExactlyOneActiveSession() throws Exception {
+        StudySession first = studySessionService.createSession("Concurrent A", null, null);
+        StudySession second = studySessionService.createSession("Concurrent B", null, null);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> startFirst = pool.submit(
+                    () -> studySessionService.startSession(first.getId()));
+            Future<?> startSecond = pool.submit(
+                    () -> studySessionService.startSession(second.getId()));
+
+            startFirst.get(30, TimeUnit.SECONDS);
+            startSecond.get(30, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        List<StudySession> active = studySessionService.listSessions(StudySessionStatus.ACTIVE);
+        assertThat(active).as("exactly one session may be active after concurrent starts")
+                .hasSize(1);
+
+        StudySession sessionA = studySessionService.getSession(first.getId());
+        StudySession sessionB = studySessionService.getSession(second.getId());
+        assertThat(List.of(sessionA.getStatus(), sessionB.getStatus()))
+                .containsExactlyInAnyOrder(
+                        StudySessionStatus.ACTIVE, StudySessionStatus.PAUSED);
     }
 }

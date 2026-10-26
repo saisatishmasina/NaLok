@@ -126,6 +126,32 @@ class StudySessionTest {
     }
 
     @Test
+    void resumeBeforePausedAtIsRejected() {
+        StudySession session = new StudySession("Deep work", null, null);
+        session.start(T0);
+        session.pause(T0.plusSeconds(1800));
+
+        assertThatThrownBy(() -> session.resume(T0.plusSeconds(1799)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(session.getStatus()).isEqualTo(StudySessionStatus.PAUSED);
+        assertThat(session.getActiveWorkTime()).isEqualTo(Duration.ofSeconds(1800));
+        assertThat(session.getActiveSince()).isNull();
+    }
+
+    @Test
+    void finishBeforePausedAtIsRejected() {
+        StudySession session = new StudySession("Deep work", null, null);
+        session.start(T0);
+        session.pause(T0.plusSeconds(1800));
+
+        assertThatThrownBy(() -> session.finish(T0.plusSeconds(1799)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(session.getStatus()).isEqualTo(StudySessionStatus.PAUSED);
+        assertThat(session.getCompletedAt()).isNull();
+        assertThat(session.getActiveWorkTime()).isEqualTo(Duration.ofSeconds(1800));
+    }
+
+    @Test
     void finishFromActiveClosesLegAndRecordsCompletion() {
         StudySession session = new StudySession("Deep work", null, null);
         session.start(T0);

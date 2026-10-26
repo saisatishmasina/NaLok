@@ -14,10 +14,14 @@ Goal: Make StudySession compile; map the optional context reference; complete st
 
 ## Verification evidence
 - Commands: `./mvnw compile`, `./mvnw test`, `./mvnw verify`, `git diff --check`.
-- Results: BUILD SUCCESS; Tests run: 54, Failures: 0, Errors: 0 (30 Projects regression + 24 new: StudySession model 14, EntityReference 1, Study integration 9).
-- Database: disposable nalok_opencode_test (create-drop).
-- Not yet pushed (feat/Study commit is local) unless requested.
+- Results: BUILD SUCCESS; Tests run: 58, Failures: 0, Errors: 0, Skipped: 0.
+- Test isolation: committed test config (placeholders only) + TestDatabaseIsolationTest asserting SELECT DATABASE() = nalok_opencode_test; integration reports confirm nalok_opencode_test only.
+- Concurrency: simultaneousStartsLeaveExactlyOneActiveSession (two threads, guard lock).
+- Chronology: resume/finish before paused_at rejected (model tests).
+
+## Incident (resolved during this task)
+First Study run used the personal `nalok` database (test config missing from main repo); test rows inserted and later verified-and-removed; `studysessions` table dropped. See STATUS incident record.
 
 ## Next task
 ID: S03
-Goal: Study persistence/service hardening — N+1 check on history lists, pagination for session history, optimistic-lock conflict test (@Version), context validation through module API review.
+Goal: Study persistence/service hardening — pagination for session history, optimistic-lock conflict test (@Version), context validation review.

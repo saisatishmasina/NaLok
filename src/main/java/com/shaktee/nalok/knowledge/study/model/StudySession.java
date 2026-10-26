@@ -61,6 +61,13 @@ public class StudySession {
     private Instant completedAt;
 
     /**
+     * When the current leg was paused; non-null exactly while status is
+     * PAUSED. Used to reject backward-dated resumes and completions.
+     */
+    @Column(name = "paused_at")
+    private Instant pausedAt;
+
+    /**
      * Accumulated active work time across all active legs.
      */
     @Column(name = "active_work_time", nullable = false)
@@ -106,6 +113,7 @@ public class StudySession {
         }
 
         closeActiveLeg(now);
+        this.pausedAt = now;
         this.status = StudySessionStatus.PAUSED;
     }
 
@@ -114,8 +122,13 @@ public class StudySession {
             throw new IllegalStateException("only paused sessions can be resumed");
         }
 
+        if (now.isBefore(this.pausedAt)) {
+            throw new IllegalStateException("resume time is before the session was paused");
+        }
+
         this.status = StudySessionStatus.ACTIVE;
         this.activeSince = now;
+        this.pausedAt = null;
     }
 
     public void finish(Instant now) {
@@ -125,8 +138,12 @@ public class StudySession {
 
         if (this.status == StudySessionStatus.ACTIVE) {
             closeActiveLeg(now);
+        } else if (now.isBefore(this.pausedAt)) {
+            throw new IllegalStateException(
+                    "completion time is before the session was paused");
         }
 
+        this.pausedAt = null;
         this.status = StudySessionStatus.COMPLETED;
         this.completedAt = now;
     }

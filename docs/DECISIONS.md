@@ -31,6 +31,12 @@ recoverInterrupted operation closes the leg at recovery time and pauses.
 Limitation: time until recovery counts as active work; manual duration
 correction remains an open decision.
 
+## D08 — Single-active enforcement via named lock
+Accepted 2026-10-26. Concurrent start/resume calls serialize on MySQL
+GET_LOCK('nalok:active-session'), released after commit or rollback through a
+transaction synchronization (releasing before commit would reopen the race).
+Valid for the single-instance desktop app; revisit for multi-user server use.
+
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
 - Manual correction of recorded study duration.
