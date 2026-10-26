@@ -35,10 +35,11 @@ Projects backend milestone (pushed to origin/feat/Projects, commit c02986c): fix
 Study S01+S02 (local commit 7e6e10a, then hardening fixes): EntityReference embeddable context with round trips; lifecycle with explicit-Instant transitions, correct elapsed math, @Version; single-focused-session rule enforced with a MySQL named-lock guard released after commit (D08); backward-dated resume/finish rejected via paused_at; test isolation guard added.
 
 ## Verification evidence (current)
-- `./mvnw test` and `./mvnw verify`: BUILD SUCCESS, Tests run: 63, Failures: 0, Errors: 0, Skipped: 0.
+- Fresh `./mvnw verify`: BUILD SUCCESS, Tests run: 63, Failures: 0, Errors: 0, Skipped: 0 (no leftover intentional-failure reports).
 - `git diff --check`: clean.
 - Test reports confirm all Spring contexts connect to nalok_opencode_test only.
 - Guard ordering proven: a forced misconfigured run (`-Dspring.datasource.url=.../nalok`) failed in 0.3s at environment-postprocessing, before Hibernate, leaving the personal database untouched (no tables created).
+- Guard release proven cross-connection: after commit and after rollback, IS_USED_LOCK on a separate physical connection returns NULL (reentrancy-safe check).
 
 ## Study progress (feat/Study)
 - S01 EntityReference embeddable mapped (context_type/context_id), both-or-neither enforced; MySQL round trips for absent, project and section contexts.

@@ -3,6 +3,8 @@ package com.shaktee.nalok.knowledge.study.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -11,6 +13,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+
+import javax.sql.DataSource;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +44,9 @@ class StudySessionIntegrationTest {
 
     @Autowired
     private ProjectSectionService sectionService;
+
+    @Autowired
+    private DataSource dataSource;
 
     @Test
     void standaloneSessionRoundTripWithAbsentContext() {
@@ -205,20 +212,50 @@ class StudySessionIntegrationTest {
         assertThat(List.of(sessionA.getStatus(), sessionB.getStatus()))
                 .containsExactlyInAnyOrder(
                         StudySessionStatus.ACTIVE, StudySessionStatus.PAUSED);
+
+        try (Connection held = dataSource.getConnection();
+             Connection probe = dataSource.getConnection()) {
+            assertThat(isUsedLock(probe, "nalok:active-session"))
+                    .as("guard must be released after commit")
+                    .isNull();
+        }
     }
 
     @Test
-    void failedStartReleasesTheGuard() {
+    void failedStartReleasesTheGuard() throws Exception {
         // startSession on an unknown id acquires the guard, then fails and
         // rolls back. A leaked guard would make the next start time out (10s)
         // and throw, failing this test.
         assertThatThrownBy(() -> studySessionService.startSession(UUID.randomUUID()))
                 .isInstanceOf(IllegalArgumentException.class);
 
+        // Prove release from a different physical connection: if the guard
+        // leaked, IS_USED_LOCK reports the holding connection instead of NULL.
+        // MySQL named locks are reentrant on the holding connection, so a
+        // same-connection check alone would be inconclusive.
+        try (Connection held = dataSource.getConnection();
+             Connection probe = dataSource.getConnection()) {
+            assertThat(isUsedLock(probe, "nalok:active-session"))
+                    .as("guard must be released after rollback")
+                    .isNull();
+        }
+
         StudySession session = studySessionService.createSession("After failure", null, null);
         studySessionService.startSession(session.getId());
 
         assertThat(studySessionService.getSession(session.getId()).getStatus())
                 .isEqualTo(StudySessionStatus.ACTIVE);
+    }
+
+    /**
+     * NULL when the named lock is free; otherwise the holder's connection id.
+     * Uses a raw statement to keep the probe off any transaction context.
+     */
+    private static Object isUsedLock(Connection connection, String lockName) throws Exception {
+        try (ResultSet result = connection.createStatement()
+                .executeQuery("SELECT IS_USED_LOCK('" + lockName + "')")) {
+            result.next();
+            return result.getObject(1);
+        }
     }
 }

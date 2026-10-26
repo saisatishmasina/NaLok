@@ -16,7 +16,7 @@ Goal: Make StudySession compile; map the optional context reference; complete st
 - Commands: `./mvnw compile`, `./mvnw test`, `./mvnw verify`, `git diff --check`.
 - Results: BUILD SUCCESS; Tests run: 63, Failures: 0, Errors: 0, Skipped: 0.
 - Test isolation: committed test config (placeholders only) + TestDatabaseGuard (environment post-processor, fails before Hibernate) + TestDatabaseIsolationTest; forced misconfigured run proved early rejection with no schema damage.
-- Concurrency: simultaneousStartsLeaveExactlyOneActiveSession (two threads released by a CyclicBarrier) and failedStartReleasesTheGuard (guard released after rollback).
+- Concurrency: simultaneousStartsLeaveExactlyOneActiveSession (two threads released by a CyclicBarrier) and failedStartReleasesTheGuard (IS_USED_LOCK probe from a separate physical connection proves release after rollback and after commit).
 - Chronology: resume/start-from-paused/finish before paused_at rejected (model tests).
 
 ## Incident (resolved during this task)
