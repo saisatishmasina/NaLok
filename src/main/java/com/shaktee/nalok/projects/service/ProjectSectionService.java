@@ -10,6 +10,7 @@ import com.shaktee.nalok.projects.model.ProjectSection;
 import com.shaktee.nalok.projects.repository.ProjectRepository;
 import com.shaktee.nalok.projects.repository.ProjectSectionRepository;
 import com.shaktee.nalok.projects.model.Project;
+import com.shaktee.nalok.web.NotFoundException;
 
 @Service
 @Transactional(readOnly = true)
@@ -34,7 +35,7 @@ public class ProjectSectionService {
     public List<ProjectSection> listSections(UUID projectId) {
         findProject(projectId);
 
-        return sectionRepository.findByProject_IdOrderByPositionAsc(projectId);
+        return sectionRepository.findWithProjectByProjectId(projectId);
     }
 
     @Transactional
@@ -77,13 +78,13 @@ public class ProjectSectionService {
 
     private Project findProject(UUID projectId) {
         return projectRepository.findById(projectId)
-                .orElseThrow(() -> new IllegalArgumentException(
+                .orElseThrow(() -> new NotFoundException(
                         "Project not found: " + projectId));
     }
 
     private ProjectSection findSection(UUID sectionId) {
         return sectionRepository.findById(sectionId)
-                .orElseThrow(() -> new IllegalArgumentException(
+                .orElseThrow(() -> new NotFoundException(
                         "Section not found: " + sectionId));
     }
 

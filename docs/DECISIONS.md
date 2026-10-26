@@ -37,6 +37,41 @@ GET_LOCK('nalok:active-session'), released after commit or rollback through a
 transaction synchronization (releasing before commit would reopen the race).
 Valid for the single-instance desktop app; revisit for multi-user server use.
 
+## D09 — Persisted study work intervals for period reporting
+Accepted 2026-10-26. Session.activeWorkTime totals cannot answer "how much
+active work happened this week" for sessions spanning week boundaries, so
+every active leg is also persisted as a studyworkintervals row (session_id,
+started_at, ended_at; null while ACTIVE). The interval updates run in the same
+transaction as the session transition, including D06 auto-pause and D07
+recoverInterrupted, and interval timestamps share the transition's instant.
+Open intervals are capped at min(now, windowEnd) in period sums; pauses are
+excluded by construction. Limitation: sessions started before this change have
+no historical breakdown — reports expose an interval-coverage start and the
+UI must not fabricate history for older sessions.
+
+Hardened same day (2026-10-26, hardening pass):
+- A persisted rollout marker (studyreportingcoverage singleton) records the
+  first transitional instant that opened a leg. Coverage start resolves to
+  min(marker, earliest persisted interval): intervals recorded before the
+  marker are real, reportable data; the marker floors coverage against later
+  interval deletion (coverage never reports before the marker even if old
+  intervals are deleted).
+- Days entirely before coverage start report zero seconds AND covered=false;
+  future days of the current week are never covered. A day whose END equals
+  the coverage instant is also uncovered (strictly-before rule): it has
+  provably zero covered time. The UI presents these as "no reliable data",
+  not as a fabricated 0:00.
+- Rollout bridge: the first interval-maintaining transition after rollout
+  records every pre-rollout ACTIVE session's ongoing leg as a real interval
+  [activeSince, now] in the same transaction (marker-gated, exactly once) —
+  persisted session state, not fabricated values.
+- StudySessionDto carries serverNow next to live activeSecondsTotal so the
+  frontend anchors the running timer to a server instant instead of drifting:
+  the client adds only monotonic deltas from the snapshot-arrival moment
+  (performance.now), never wall-clock arithmetic against serverNow.
+- Dangling study context targets answer HTTP 404 ("Context target not found"),
+  not 400.
+
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
 - Manual correction of recorded study duration.

@@ -3,12 +3,16 @@ package com.shaktee.nalok.projects.service;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.shaktee.nalok.projects.model.Project;
 import com.shaktee.nalok.projects.model.ProjectStatus;
 import com.shaktee.nalok.projects.repository.ProjectRepository;
+import com.shaktee.nalok.web.NotFoundException;
 
 @Service
 @Transactional(readOnly = true)
@@ -26,6 +30,24 @@ public class ProjectService {
 
     public List<Project> listProjects(ProjectStatus status) {
         return projectRepository.findByStatus(status);
+    }
+
+    /**
+     * Bounded, newest-first page of projects for UI lists. Null status = all
+     * projects; page size is capped like the study history.
+     */
+    public Page<Project> listProjectPage(ProjectStatus status, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+
+        PageRequest pageRequest = PageRequest.of(safePage, safeSize,
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("id")));
+
+        if (status == null) {
+            return projectRepository.findAll(pageRequest);
+        }
+
+        return projectRepository.findByStatus(status, pageRequest);
     }
 
     @Transactional
@@ -90,6 +112,7 @@ public class ProjectService {
 
     private Project findProject(UUID projectId) {
         return projectRepository.findById(projectId)
-                .orElseThrow(() -> new IllegalArgumentException("Project not found" + projectId));
+                .orElseThrow(() -> new NotFoundException(
+                        "Project not found: " + projectId));
     }
 }
