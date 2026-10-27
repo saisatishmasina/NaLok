@@ -88,6 +88,17 @@ content changes (no revision, JPA version moves).
   note_section_links, note_session_links; attach idempotent; unlink touches
   only the link row; section-linked notes reachable project-wide.
 
+## D11 — Note body storage and concurrency guards (2026-10-26)
+Accepted. Note and revision bodies are MEDIUMTEXT with an explicit
+50,000-character limit validated in the model: oversized writing is a clean
+request error (400), never a database failure. Concurrent attaches of the
+same note serialize on a per-note MySQL named lock (the proven study-guard
+pattern), so duplicate attaches are idempotent even under a race; concurrent
+edits are protected by the row-level @Version alone — the service-level
+expectedVersion check is a UX fast path, not the integrity mechanism.
+- New bounded endpoint GET /api/notes/{id}/revisions/page (summaries
+  without bodies); the full /revisions list is unchanged for the editor.
+
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
 - Manual correction of recorded study duration.

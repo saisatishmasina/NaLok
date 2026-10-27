@@ -3,16 +3,25 @@ package com.shaktee.nalok.notes.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.shaktee.nalok.knowledge.study.model.StudySession;
 import com.shaktee.nalok.knowledge.study.service.StudySessionService;
 import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteKind;
+import com.shaktee.nalok.notes.model.NoteProjectLink;
 import com.shaktee.nalok.notes.repository.NoteRevisionRepository;
 import com.shaktee.nalok.projects.model.Project;
 import com.shaktee.nalok.projects.model.ProjectSection;
@@ -46,6 +55,9 @@ class NoteLinkServiceIntegrationTest {
 
     @Autowired
     private StudySessionService studySessionService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void noteIsReusedAcrossTwoProjectsWithoutCopyingContent() {
@@ -82,6 +94,50 @@ class NoteLinkServiceIntegrationTest {
     }
 
     @Test
+    void simultaneousAttachesSerializeAndProduceExactlyOneLink() throws Exception {
+        Note note = noteService.createNote("Concurrent attach", "Body", NoteKind.NOTE);
+        Project project = projectService.createProject("Attach race", null);
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Future<NoteProjectLink>> results;
+        try {
+            results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    barrier.await(5, TimeUnit.SECONDS);
+                    return noteLinkService.linkToProject(note.getId(), project.getId());
+                }));
+            }
+            // Collect while the pool is still alive.
+            results.get(0).get(10, TimeUnit.SECONDS);
+            results.get(1).get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+        // Both requests succeed (the second waits on the guard, finds the
+        // existing row and answers idempotently) — no collision error.
+        assertThat(noteLinkService.listProjectLinks(note.getId())).hasSize(1);
+    }
+
+    @Test
+    void linkTableForeignKeysAreEnforcedByTheDatabase() {
+        Note note = noteService.createNote("FK check", "Body", NoteKind.NOTE);
+        Project project = projectService.createProject("FK project", null);
+
+        // A link row pointing at a note that does not exist must be refused
+        // by the database itself, not only by service validation.
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "INSERT INTO note_project_links (id, note_id, project_id, linked_at) "
+                        + "VALUES (UUID_TO_BIN(UUID()), UUID_TO_BIN(?), "
+                        + "UUID_TO_BIN(?), UTC_TIMESTAMP(6))",
+                UUID.randomUUID().toString(), project.getId().toString()))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        assertThat(noteLinkService.listProjectLinks(note.getId())).isEmpty();
+    }
+
+    @Test
     void unknownTargetsAreRejected() {
         Note note = noteService.createNote("Rejected links", "Body", NoteKind.NOTE);
 
@@ -94,6 +150,11 @@ class NoteLinkServiceIntegrationTest {
         assertThatThrownBy(() -> noteLinkService.linkToProject(UUID.randomUUID(),
                 projectService.createProject("Real project", null).getId()))
                 .isInstanceOf(NotFoundException.class);
+
+        // Rejections happen before any write: nothing was stored anywhere.
+        assertThat(noteLinkService.listProjectLinks(note.getId())).isEmpty();
+        assertThat(noteLinkService.listSectionLinks(note.getId())).isEmpty();
+        assertThat(noteLinkService.listSessionLinks(note.getId())).isEmpty();
     }
 
     @Test

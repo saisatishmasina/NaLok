@@ -64,4 +64,23 @@ public record NoteDto(
                     revision.getRecordedAt());
         }
     }
+
+    /**
+     * Bounded revision-history page payload: same metadata without the
+     * stored body, so paging through a heavily revised note stays light.
+     * Full content remains available per revision via the detail endpoint.
+     */
+    public record NoteRevisionSummaryDto(
+            UUID revisionId,
+            long revisionNumber,
+            String title,
+            NoteKind kind,
+            Instant recordedAt) {
+
+        public static NoteRevisionSummaryDto of(NoteRevision revision) {
+            return new NoteRevisionSummaryDto(revision.getId(),
+                    revision.getRevisionNumber(), revision.getTitle(),
+                    revision.getKind(), revision.getRecordedAt());
+        }
+    }
 }

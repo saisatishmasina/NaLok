@@ -8,10 +8,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.shaktee.nalok.knowledge.study.model.StudySession;
+import com.shaktee.nalok.knowledge.study.service.GuardUnavailableException;
 import com.shaktee.nalok.knowledge.study.service.StudySessionService;
 import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteProjectLink;
@@ -32,10 +36,19 @@ import com.shaktee.nalok.web.NotFoundException;
  * note. Duplicate attaches are idempotent (single row, original linkedAt);
  * unlinking a non-linked target is a no-op. Unknown notes or targets are
  * rejected up front.
+ *
+ * Attaches serialize on a per-note MySQL named lock (same proven pattern as
+ * the study active-session guard): two simultaneous attaches of the same
+ * pair would otherwise both pass the existence check and collide on the
+ * unique constraint. The lock makes the second one wait, find the existing
+ * row, and answer idempotently.
  */
 @Service
 @Transactional(readOnly = true)
 public class NoteLinkService {
+
+    private static final String NOTE_LINK_GUARD_PREFIX = "nalok:note-links:";
+    private static final int GUARD_TIMEOUT_SECONDS = 10;
 
     private final NoteRepository noteRepository;
     private final NoteProjectLinkRepository projectLinkRepository;
@@ -45,6 +58,7 @@ public class NoteLinkService {
     private final ProjectSectionService projectSectionService;
     private final StudySessionService studySessionService;
     private final Clock clock;
+    private final JdbcTemplate jdbcTemplate;
 
     public NoteLinkService(NoteRepository noteRepository,
             NoteProjectLinkRepository projectLinkRepository,
@@ -53,7 +67,8 @@ public class NoteLinkService {
             ProjectService projectService,
             ProjectSectionService projectSectionService,
             StudySessionService studySessionService,
-            Clock clock) {
+            Clock clock,
+            JdbcTemplate jdbcTemplate) {
         this.noteRepository = noteRepository;
         this.projectLinkRepository = projectLinkRepository;
         this.sectionLinkRepository = sectionLinkRepository;
@@ -62,10 +77,13 @@ public class NoteLinkService {
         this.projectSectionService = projectSectionService;
         this.studySessionService = studySessionService;
         this.clock = clock;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
     public NoteProjectLink linkToProject(UUID noteId, UUID projectId) {
+        acquireLinkGuard(noteId);
+        releaseGuardAfterTransactionEnds(noteId);
         Note note = findNote(noteId);
         requireProject(projectId);
         NoteProjectLink existing =
@@ -81,6 +99,8 @@ public class NoteLinkService {
 
     @Transactional
     public NoteSectionLink linkToSection(UUID noteId, UUID sectionId) {
+        acquireLinkGuard(noteId);
+        releaseGuardAfterTransactionEnds(noteId);
         Note note = findNote(noteId);
         requireSection(sectionId);
         NoteSectionLink existing =
@@ -96,6 +116,8 @@ public class NoteLinkService {
 
     @Transactional
     public NoteSessionLink linkToSession(UUID noteId, UUID sessionId) {
+        acquireLinkGuard(noteId);
+        releaseGuardAfterTransactionEnds(noteId);
         Note note = findNote(noteId);
         StudySession session = studySessionService.getSession(sessionId);
         NoteSessionLink existing =
@@ -176,6 +198,40 @@ public class NoteLinkService {
     private Note findNote(UUID noteId) {
         return noteRepository.findById(noteId)
                 .orElseThrow(() -> new NotFoundException("Note not found: " + noteId));
+    }
+
+    /**
+     * One link mutation per note at a time. GET_LOCK binds to the current
+     * transaction's connection, so the release must happen on that same
+     * connection AFTER commit/rollback — released via transaction
+     * synchronization while the connection is still bound (proven pattern
+     * from the study active-session guard).
+     */
+    private void acquireLinkGuard(UUID noteId) {
+        Integer result = jdbcTemplate.queryForObject(
+                "SELECT GET_LOCK(?, ?)", Integer.class,
+                NOTE_LINK_GUARD_PREFIX + noteId, GUARD_TIMEOUT_SECONDS);
+
+        if (result == null || result != 1) {
+            throw new GuardUnavailableException(
+                    "could not acquire the note-link guard; try again");
+        }
+    }
+
+    private void releaseGuardAfterTransactionEnds(UUID noteId) {
+        String guardName = NOTE_LINK_GUARD_PREFIX + noteId;
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        try {
+                            jdbcTemplate.queryForObject(
+                                    "SELECT RELEASE_LOCK(?)", Integer.class, guardName);
+                        } catch (RuntimeException releasedElsewhereOrGone) {
+                            // Best effort; the lock dies with the connection.
+                        }
+                    }
+                });
     }
 
     private void requireProject(UUID projectId) {

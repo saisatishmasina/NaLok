@@ -1,8 +1,8 @@
 # Current task
 
-ID: N01 (Notes module) — COMPLETE pending user review
-State: N01a+N01b+N01c done on feat/Notes (backend 130/0); N01d (Notes UI) is the frontend session's task once it consumes this contract
-Goal: Independent notes with revision history, safe associations, REST contract.
+ID: N02 (Notes reliability pass) — COMPLETE pending user review
+State: feat/Notes worktree `/Users/satish/.local/share/opencode/worktree/notes`; backend 136/0 green; next: R01a Saved Sources backend (web-URL-only first slice recommended)
+Goal: Make concurrent attaching/writing predictable, bound retrieval, and validate body size before the database does.
 
 ## N01a scope and what was done
 1. Package `com.shaktee.nalok.notes` (model/repository/service only — REST is N01c). `Note` (UUID, @Version, title≤200, Markdown body stored raw, NoteKind NOTE/THOUGHT/QUESTION/DECISION/CHECKPOINT, reversible archive flag, createdAt/updatedAt, latestRevisionNumber separate from the JPA version). `NoteRevision` immutable snapshot with FK to the note and unique (note_id, revision_number); revision numbers start at 1.
@@ -15,9 +15,22 @@ Goal: Independent notes with revision history, safe associations, REST contract.
 - Behavior proven: Unicode/multiline body round trip; initial revision on creation; revision 2 recorded with revision 1 preserved unchanged; unchanged save → no revision and updatedAt untouched; kind-only change → revision; stale expectedVersion rejected with content and history intact; oversized (70,000-byte) save rolls back completely — original body kept, revision count unchanged (no orphan revision); archive/restore keep content + history and do not fake a writing change; pagination disjoint/capped/kind+archived filters; revision scoping across notes; unknown note/revision → NotFound.
 - Two real bugs found and fixed during verification, both mine, both merge-semantics: `noteRepository.save()` on a transient entity with a preset UUID calls `merge()`, so `revisionRecorded()` was incrementing the discarded original — createNote now continues with the returned managed copy. Same lesson as S03, different disguise; recorded in TESTING.md guidance.
 
+## N02 scope and what was done
+1. Body validation moved ahead of the database (D11): Note/NoteRevision bodies are MEDIUMTEXT with an explicit 50,000-character cap enforced in the model — oversized writing is a clean 400 (IllegalArgumentException mapping), never a surprise DB failure. Cap boundary proven (exactly 50,000 saves; 50,001 rejected with no write).
+2. Concurrent attaches serialize on a per-note MySQL named lock `nalok:note-links:{noteId}` (same GET_LOCK/afterCompletion-release pattern as the study guard): two simultaneous attaches of the same pair both succeed, exactly one row, original linkedAt. Barrier-synchronized test proves it.
+3. Concurrent WRITING proven safe without new code: two threads load the same version and edit together — the service-level expectedVersion check passes for both, and the row-level @Version closes the race (exactly one winner, one new revision, loser's content in no revision). This is the load-bearing finding: the service check alone is NOT sufficient; the @Version update guard is what actually protects notes.
+4. Bounded retrieval: new endpoint GET /api/notes/{id}/revisions/page?page&size → PageEnvelope<NoteRevisionSummaryDto> (summaries WITHOUT bodies, newest first, capped at 100); the unpaginated GET /{id}/revisions (full trail with bodies) is unchanged for the editor. FRONTEND CONTRACT ADDITION: prefer /revisions/page for history lists; full list only when the complete trail is genuinely needed.
+5. Integrity proofs: note+revision atomicity via a real DB-level rejection (duplicate revision number) — note insert rolls back with it, no orphan row; link-table FK enforcement proven by raw insert with a bogus note_id (DB refuses, not just the service); failed attaches leave zero rows in all three link tables.
+
+## Verification evidence (N02)
+- Commands: `sh mvnw verify` (dbenv loaded), `git diff --check` at commit.
+- Result: BUILD SUCCESS, Tests run: 136, Failures: 0, Errors: 0, Skipped: 0.
+- Environment note: one intermediate run showed 5 errors (`Table 'nalok_opencode_test.projects' doesn't exist`) — caused by the frontend session running its Maven suite concurrently against the SAME disposable DB (its create-drop dropped the schema mid-run). Re-run with no concurrent backend suite → 136/0. Both sessions must not run backend tests simultaneously.
+
 ## Next task
-ID: N01d (frontend)
-Goal: Notes editor/list consuming the /api/notes contract below; open from Study and Projects via association endpoints.
+ID: R01a
+Goal: Saved Sources backend — website/article URL identity (title, URL, created/updated, version-checked edits, reversible archive), note↔source association, bounded REST lists. URLs only: no fetching, scraping or downloads in this slice.
+
 
 ## N01b scope and what was done
 1. Three link entities with real FKs and unique (note_id, target_id): note_project_links, note_section_links, note_session_links; linkedAt records association time, never authorship.

@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -142,6 +143,21 @@ public class NoteService {
     public List<NoteRevision> listRevisions(UUID noteId) {
         findNote(noteId);
         return noteRevisionRepository.findByNote_IdOrderByRevisionNumberDesc(noteId);
+    }
+
+    /**
+     * Bounded revision-history page, newest first. The unpaginated list above
+     * stays for the editor's full trail; this bounded page keeps heavily
+     * revised notes from loading every snapshot at once.
+     */
+    public Page<NoteRevision> listRevisionPage(UUID noteId, int page, int size) {
+        findNote(noteId);
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+
+        Pageable pageRequest = PageRequest.of(safePage, safeSize,
+                Sort.by(Sort.Order.desc("revisionNumber")));
+        return noteRevisionRepository.findByNote_Id(noteId, pageRequest);
     }
 
     public NoteRevision getRevision(UUID noteId, UUID revisionId) {

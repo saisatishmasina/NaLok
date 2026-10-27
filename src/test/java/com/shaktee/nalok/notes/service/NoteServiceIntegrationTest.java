@@ -3,14 +3,23 @@ package com.shaktee.nalok.notes.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.Page;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteKind;
@@ -36,6 +45,9 @@ class NoteServiceIntegrationTest {
 
     @Autowired
     private NoteRevisionRepository noteRevisionRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @Test
     void unicodeAndMultilineBodySurviveReload() {
@@ -140,21 +152,138 @@ class NoteServiceIntegrationTest {
     }
 
     @Test
-    void failedContentSaveRollsBackLeavingNoOrphanRevision() {
-        Note created = noteService.createNote("Atomic", "Safe body", NoteKind.NOTE);
+    void oversizedBodyIsRejectedByValidationBeforeAnyDatabaseWrite() {
+        Note created = noteService.createNote("Limit", "Safe body", NoteKind.NOTE);
         Note note = noteService.getNote(created.getId());
 
-        // 70,000 bytes exceeds the TEXT column; the save must fail as a whole.
-        assertThatThrownBy(() -> noteService.updateNote(created.getId(), "Atomic",
-                "a".repeat(70_000), NoteKind.NOTE, note.getVersion()))
-                .isInstanceOf(RuntimeException.class);
+        // Exactly the cap is valid; one more character is rejected up front
+        // (a clear 400) instead of surfacing as a database error later.
+        noteService.updateNote(created.getId(), "Limit",
+                "a".repeat(Note.MAX_BODY_LENGTH), NoteKind.NOTE, note.getVersion());
+        assertThat(noteService.getNote(created.getId()).getBody())
+                .hasSize(Note.MAX_BODY_LENGTH);
+
+        long wrongVersion = noteService.getNote(created.getId()).getVersion();
+        assertThatThrownBy(() -> noteService.updateNote(created.getId(), "Limit",
+                "a".repeat(Note.MAX_BODY_LENGTH + 1), NoteKind.NOTE, wrongVersion))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("50000");
 
         Note reloaded = noteService.getNote(created.getId());
-        assertThat(reloaded.getBody()).isEqualTo("Safe body");
-        assertThat(reloaded.getLatestRevisionNumber()).isEqualTo(1);
-        assertThat(noteRevisionRepository.countByNote_Id(created.getId())).isEqualTo(1);
-        assertThat(noteService.listRevisions(created.getId()))
-                .allSatisfy(revision -> assertThat(revision.getBody()).isEqualTo("Safe body"));
+        assertThat(reloaded.getBody()).hasSize(Note.MAX_BODY_LENGTH);
+        assertThat(noteRevisionRepository.countByNote_Id(created.getId())).isEqualTo(2);
+    }
+
+    @Test
+    void noteAndRevisionsRollBackTogetherOnDatabaseFailure() {
+        // A database-level rejection (duplicate revision number) inside the
+        // service transaction must undo the note insert as well: no orphan
+        // note, no orphan revision — they commit or roll back together.
+        AtomicReference<UUID> noteId = new AtomicReference<>();
+
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager)
+                .execute(status -> {
+                    Note note = noteService.createNote(
+                            "Atomic unit", "Body", NoteKind.NOTE);
+                    noteId.set(note.getId());
+                    noteRevisionRepository.save(
+                            new NoteRevision(note, 1, note.getCreatedAt()));
+                    return null;
+                }))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(noteId.get()).isNotNull();
+        assertThatThrownBy(() -> noteService.getNote(noteId.get()))
+                .isInstanceOf(NotFoundException.class);
+        assertThat(noteRevisionRepository.countByNote_Id(noteId.get())).isZero();
+    }
+
+    @Test
+    void simultaneousEditsWithCorrectVersionsLetExactlyOneWin() throws Exception {
+        Note created = noteService.createNote("Race", "Original", NoteKind.NOTE);
+        UUID id = created.getId();
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        long winners;
+        try {
+            List<Future<Object>> results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                final String tag = "edit-" + i;
+                results.add(pool.submit(() -> {
+                    // Both editors read the SAME committed version, then are
+                    // released together: the service-level version check
+                    // passes for both, so the race must be closed by the
+                    // row-level @Version — exactly one write may win.
+                    Note loaded = noteService.getNote(id);
+                    barrier.await(5, TimeUnit.SECONDS);
+                    try {
+                        return noteService.updateNote(id, "Race " + tag,
+                                "Body " + tag, NoteKind.NOTE, loaded.getVersion());
+                    } catch (ObjectOptimisticLockingFailureException stale) {
+                        return stale;
+                    }
+                }));
+            }
+            // Collect while the pool is still alive: shutdownNow would
+            // interrupt the workers mid-transaction.
+            winners = results.stream()
+                    .filter(future -> {
+                        try {
+                            return future.get(10, TimeUnit.SECONDS) instanceof Note;
+                        } catch (Exception e) {
+                            return false;
+                        }
+                    })
+                    .count();
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(winners).isEqualTo(1);
+
+        Note reloaded = noteService.getNote(id);
+        assertThat(reloaded.getVersion()).isEqualTo(1);
+        assertThat(reloaded.getLatestRevisionNumber()).isEqualTo(2);
+        assertThat(noteRevisionRepository.countByNote_Id(id)).isEqualTo(2);
+        assertThat(reloaded.getTitle()).startsWith("Race edit-");
+        // The loser's content must not have landed anywhere: the stored body
+        // is the winner's, and the loser's body appears in no revision.
+        String winnerBody = reloaded.getBody();
+        String loserBody = winnerBody.equals("Body edit-0")
+                ? "Body edit-1"
+                : "Body edit-0";
+        assertThat(noteService.listRevisions(id))
+                .extracting(NoteRevision::getBody)
+                .doesNotContain(loserBody)
+                .contains(winnerBody);
+    }
+
+    @Test
+    void revisionHistoryPageIsBoundedNewestFirstAndDisjoint() {
+        Note created = noteService.createNote("Paged", "v1", NoteKind.NOTE);
+        UUID id = created.getId();
+        for (int i = 2; i <= 8; i++) {
+            noteService.updateNote(id, "Paged", "v" + i, null,
+                    noteService.getNote(id).getVersion());
+        }
+
+        Page<NoteRevision> page0 = noteService.listRevisionPage(id, 0, 3);
+        Page<NoteRevision> page1 = noteService.listRevisionPage(id, 1, 3);
+        Page<NoteRevision> page2 = noteService.listRevisionPage(id, 2, 3);
+
+        assertThat(page0.getTotalElements()).isEqualTo(8);
+        assertThat(page0.getContent())
+                .extracting(NoteRevision::getRevisionNumber)
+                .containsExactly(8L, 7L, 6L);
+        assertThat(page1.getContent())
+                .extracting(NoteRevision::getRevisionNumber)
+                .containsExactly(5L, 4L, 3L);
+        assertThat(page2.getContent())
+                .extracting(NoteRevision::getRevisionNumber)
+                .containsExactly(2L, 1L);
+
+        Page<NoteRevision> capped = noteService.listRevisionPage(id, 0, 500);
+        assertThat(capped.getSize()).isEqualTo(100);
     }
 
     @Test

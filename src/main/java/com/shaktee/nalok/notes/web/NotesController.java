@@ -89,6 +89,23 @@ public class NotesController {
                 .toList();
     }
 
+    /**
+     * Bounded revision-history page (summaries without bodies) for heavily
+     * revised notes; full content per revision stays on the detail endpoint.
+     */
+    @GetMapping("/{id}/revisions/page")
+    public PageEnvelope<NoteDto.NoteRevisionSummaryDto> revisionPage(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        var pageResult = noteService.listRevisionPage(id, page, size);
+        List<NoteDto.NoteRevisionSummaryDto> content = pageResult.getContent().stream()
+                .map(NoteDto.NoteRevisionSummaryDto::of)
+                .toList();
+        return PageEnvelope.of(content, pageResult.getNumber(), pageResult.getSize(),
+                pageResult.getTotalElements(), pageResult.getTotalPages());
+    }
+
     @GetMapping("/{id}/revisions/{revisionId}")
     public NoteDto.NoteRevisionDto revision(@PathVariable UUID id,
             @PathVariable UUID revisionId) {

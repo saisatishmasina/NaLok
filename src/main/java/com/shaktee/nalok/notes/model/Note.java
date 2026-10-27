@@ -23,11 +23,18 @@ import lombok.Getter;
  * latestRevisionNumber tracks how many exist. That counter is deliberately
  * separate from the JPA {@code @Version}: archiving changes the record, but
  * must not pretend the writing changed.
+ *
+ * Body size is validated in the model (D11): MEDIUMTEXT storage with an
+ * explicit character cap, so oversized writing is rejected by validation
+ * and never surfaces as a database error.
  */
 @Getter
 @Entity
 @Table(name = "notes")
 public class Note {
+
+    /** Explicit writing limit; MEDIUMTEXT has room far beyond it. */
+    public static final int MAX_BODY_LENGTH = 50_000;
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -44,7 +51,7 @@ public class Note {
      * Markdown body. Nullable: a note may start as a title placeholder.
      * Stored raw (never stripped) so multiline and code content survives.
      */
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "MEDIUMTEXT")
     private String body;
 
     @Enumerated(EnumType.STRING)
@@ -75,7 +82,7 @@ public class Note {
     public Note(String title, String body, NoteKind kind, Instant now) {
         this.id = UUID.randomUUID();
         this.title = validateTitle(title);
-        this.body = body;
+        this.body = validateBody(body);
         this.kind = kind == null ? NoteKind.NOTE : requireKind(kind);
         this.archived = false;
         this.createdAt = Objects.requireNonNull(now, "creation time is required");
@@ -90,7 +97,7 @@ public class Note {
      */
     public void changeContent(String title, String body, NoteKind kind) {
         this.title = validateTitle(title);
-        this.body = body;
+        this.body = validateBody(body);
         this.kind = requireKind(kind);
     }
 
@@ -119,6 +126,14 @@ public class Note {
     public void revisionRecorded(Instant recordedAt) {
         this.latestRevisionNumber++;
         this.updatedAt = Objects.requireNonNull(recordedAt, "record time is required");
+    }
+
+    private static String validateBody(String body) {
+        if (body != null && body.length() > MAX_BODY_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Note body cannot exceed " + MAX_BODY_LENGTH + " characters");
+        }
+        return body;
     }
 
     private static NoteKind requireKind(NoteKind kind) {

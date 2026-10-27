@@ -23,6 +23,7 @@ import lombok.Getter;
  *
  * Revisions answer "how did this piece of writing change" — they are not the
  * thinking trail (separate THOUGHT/DECISION/CHECKPOINT notes answer that).
+ * Storage matches the note body (MEDIUMTEXT, D11).
  */
 @Getter
 @Entity
@@ -45,7 +46,7 @@ public class NoteRevision {
     @Column(nullable = false, length = 200)
     private String title;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "MEDIUMTEXT")
     private String body;
 
     @Enumerated(EnumType.STRING)

@@ -228,6 +228,31 @@ class NotesApiIntegrationTest {
                 .andExpect(jsonPath("$.projects.length()").value(1));
     }
 
+    @Test
+    void revisionPageEndpointAnswersBoundedSummariesWithoutBodies() throws Exception {
+        UUID id = noteService.createNote("Paged API", "v1", null).getId();
+        for (int i = 2; i <= 5; i++) {
+            noteService.updateNote(id, "Paged API", "v" + i, null,
+                    noteService.getNote(id).getVersion());
+        }
+
+        mockMvc.perform(get("/api/notes/{id}/revisions/page", id)
+                        .param("page", "0").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(2))
+                .andExpect(jsonPath("$.content[0].revisionNumber").value(5))
+                .andExpect(jsonPath("$.content[0].body").doesNotExist())
+                .andExpect(jsonPath("$.totalElements").value(5));
+
+        mockMvc.perform(get("/api/notes/{id}/revisions/page", id)
+                        .param("size", "500"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(100));
+
+        mockMvc.perform(get("/api/notes/{id}/revisions/page", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+    }
+
     private UUID readId(MvcResult result) throws Exception {
         // Deterministic UUID extraction without a JSON library dependency.
         Matcher matcher = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"")
