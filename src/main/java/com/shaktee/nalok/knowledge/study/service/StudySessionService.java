@@ -30,6 +30,8 @@ import com.shaktee.nalok.knowledge.study.repository.StudyWorkIntervalRepository;
 import com.shaktee.nalok.projects.service.ProjectSectionService;
 import com.shaktee.nalok.projects.service.ProjectService;
 import com.shaktee.nalok.web.NotFoundException;
+import com.shaktee.nalok.world.event.WorldEventKind;
+import com.shaktee.nalok.world.event.service.WorldEventService;
 import com.shaktee.nalok.world.reference.EntityReference;
 import com.shaktee.nalok.world.reference.EntityType;
 
@@ -51,6 +53,7 @@ public class StudySessionService {
     private final StudyReportingCoverageRepository coverageRepository;
     private final ProjectService projectService;
     private final ProjectSectionService projectSectionService;
+    private final WorldEventService worldEventService;
     private final Clock clock;
     private final JdbcTemplate jdbcTemplate;
 
@@ -60,6 +63,7 @@ public class StudySessionService {
             StudyReportingCoverageRepository coverageRepository,
             ProjectService projectService,
             ProjectSectionService projectSectionService,
+            WorldEventService worldEventService,
             Clock clock,
             JdbcTemplate jdbcTemplate) {
         this.studySessionRepository = studySessionRepository;
@@ -67,6 +71,7 @@ public class StudySessionService {
         this.coverageRepository = coverageRepository;
         this.projectService = projectService;
         this.projectSectionService = projectSectionService;
+        this.worldEventService = worldEventService;
         this.clock = clock;
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -100,7 +105,10 @@ public class StudySessionService {
     @Transactional
     public StudySession createSession(String title, String summary, EntityReference context) {
         validateContext(context);
-        return studySessionRepository.save(new StudySession(title, summary, context));
+        StudySession created = studySessionRepository.save(new StudySession(title, summary, context));
+        // Event joins THIS transaction: a rolled-back create leaves no event.
+        recordEvent(WorldEventKind.STUDY_SESSION_CREATED, created);
+        return created;
     }
 
     @Transactional
@@ -133,6 +141,7 @@ public class StudySessionService {
         StudySession session = findSession(sessionId);
         session.pause(now);
         closeAnyOpenInterval(sessionId, now);
+        recordEvent(WorldEventKind.STUDY_SESSION_PAUSED, session);
         return session;
     }
 
@@ -146,6 +155,7 @@ public class StudySessionService {
             // A paused-session finish was already closed at pause time.
             closeAnyOpenInterval(sessionId, now);
         }
+        recordEvent(WorldEventKind.STUDY_SESSION_FINISHED, session);
         return session;
     }
 
@@ -167,6 +177,7 @@ public class StudySessionService {
 
         session.pause(now);
         closeAnyOpenInterval(sessionId, now);
+        recordEvent(WorldEventKind.STUDY_SESSION_RECOVERED, session);
         return session;
     }
 
@@ -195,6 +206,7 @@ public class StudySessionService {
                 Instant untrackedLegStart = active.getActiveSince();
                 active.pause(now);
                 closeAnyOpenInterval(active.getId(), now);
+                recordEvent(WorldEventKind.STUDY_SESSION_AUTO_PAUSED, active);
 
                 if (markerWasAbsent && untrackedLegStart != null) {
                     // Rollout bridge (D09): a session ACTIVE before interval
@@ -214,6 +226,9 @@ public class StudySessionService {
             session.start(now);
         }
         openInterval(sessionId, now);
+        recordEvent(isResume
+                ? WorldEventKind.STUDY_SESSION_RESUMED
+                : WorldEventKind.STUDY_SESSION_STARTED, session);
 
         return session;
     }
@@ -447,12 +462,25 @@ public class StudySessionService {
         boolean exists = switch (context.getEntityType()) {
             case PROJECT -> projectService.projectExists(context.getReferenceId());
             case PROJECT_SECTION -> projectSectionService.sectionExists(context.getReferenceId());
+            // A session is never another session's context (the reference
+            // type is shared, but sessions nest nothing).
+            case STUDY_SESSION -> false;
         };
 
         if (!exists) {
             throw new ContextTargetNotFoundException(
                     "Study context target does not exist: " + context);
         }
+    }
+
+    /**
+     * One event per committed transition, targeted at the session. The
+     * description stays short and factual; occurredAt is the service clock
+     * (same transaction, appended after the state change succeeded).
+     */
+    private void recordEvent(WorldEventKind kind, StudySession session) {
+        worldEventService.record(kind, session.getStatus() + " — " + session.getTitle(),
+                EntityReference.of(EntityType.STUDY_SESSION, session.getId()));
     }
 
     private StudySession findSession(UUID sessionId) {

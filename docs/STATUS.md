@@ -1,5 +1,39 @@
 # Status — audited 2026-10-26
 
+## E01a Study activity history (feat/Events, 2026-10-26)
+- World events are now PERSISTED immutable facts: `com.shaktee.nalok.world.event`
+  gained a `WorldEvent` entity (world_events: id, occurred_at, kind,
+  description≤500, optional EntityReference target — both-or-neither),
+  `WorldEventKind` (WORLD_STARTED + STUDY_SESSION_* lifecycle kinds), a real
+  repository/service, and a read-only bounded REST endpoint `GET /api/events`
+  (kind / targetType+targetId filters; half-references → 400; no write
+  endpoint by design).
+- StudySessionService appends an event in the SAME transaction for every
+  committed lifecycle transition: created, started, auto-paused (per D06
+  victim), paused, resumed, finished, recovered. Rejected transitions write
+  no event; the startup runner now persists the single first WORLD_STARTED
+  event when the history is empty. EntityType gained STUDY_SESSION; a session
+  can never be another session's context (validateContext covers it).
+- Atomicity PROVEN (not assumed): a caller transaction that appends an event
+  and then rolls back leaves ZERO event rows (would fail by construction
+  under REQUIRES_NEW); rejected transitions leave none; the auto-pause pair
+  (victim + starter) commits together.
+- Verification: `sh mvnw verify` → BUILD SUCCESS, Tests run: 166, Failures: 0,
+  Errors: 0 (Sources baseline 158). `git diff --check` clean.
+- Not events (yet): rename/summary edits — granularity is an open decision.
+
+## Sources reliability correction (feat/Sources, 2026-10-26)
+- Audit of R01a found the duplicate-create race was NOT actually closed: the
+  catch around a plain save() could miss a commit-time unique-violation, and
+  the naive re-check inside the catch re-flushed the failed INSERT (proved by
+  the new race test failing). Fixed: saveAndFlush keeps the INSERT inside the
+  guarded window; the violated constraint is identified BY NAME (no re-query
+  re-flush); unrelated integrity failures keep their own exceptions.
+- Concurrent-edit race test for sources: exactly one winner, one clean 409
+  (no second table → no deadlock cycle; plain @Version suffices).
+- Verification: `sh mvnw verify` → BUILD SUCCESS, Tests run: 158, Failures: 0
+  (R01a baseline 156). `git diff --check` clean.
+
 ## R01a Saved Sources (feat/Sources, 2026-10-26)
 - URL-only first slice implemented: `com.shaktee.nalok.sources` (SavedSource
   model with in-model URL validation, SHA-256 `url_key` unique identity,

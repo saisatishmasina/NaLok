@@ -148,6 +148,28 @@ expectedVersion check is a UX fast path, not the integrity mechanism.
   association); barrier attach race → exactly one link row; raw-insert FK
   proof for the new table.
 
+## D14 — World events are appended inside the caller's transaction (2026-10-26)
+- Context: E01a records study lifecycle history. The core property is
+  atomicity: a state change and its event must commit or roll back together.
+- Options: (a) WorldEventService spawns its own transaction (REQUIRES_NEW)
+  — an event could persist even when the state change rolls back, creating
+  history for operations that never happened; (b) REQUIRED join — the event
+  shares the caller's transaction; (c) outbox/async relay — broker-class
+  machinery the project explicitly excludes.
+- Chosen: (b). `WorldEventService.record` is @Transactional (REQUIRED) and
+  callers invoke it only AFTER their state change succeeded. Proven by a
+  rollback test: a caller transaction that appends an event and then marks
+  rollback-only leaves zero event rows (fails by construction under
+  REQUIRES_NEW).
+- Consequences: no broker, no outbox, no async; events are immutable rows
+  (no version, no update path); rejected transitions leave no events; the
+  REST layer is read-only. Rename/summary edits are NOT events yet —
+  granularity is an open decision. EntityType gained STUDY_SESSION; sessions
+  can never be context targets.
+- Tests: ordered two-session lifecycle trail incl. D06 cross auto-pauses;
+  rejected-transition no-event proof; caller-rollback proof; bounded paged
+  retrieval; API contract (filters, half-reference 400, read-only).
+
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
 - Manual correction of recorded study duration.

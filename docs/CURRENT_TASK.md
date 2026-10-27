@@ -1,8 +1,27 @@
 # Current task
 
-ID: R01a (Saved Sources backend, URL-only slice) — COMPLETE pending user review
-State: feat/Sources worktree `/Users/satish/.local/share/opencode/worktree/b96c9b/sources` (branched from feat/Notes 2955566); backend 156/0 green
-Goal: Save, read, version-edit, archive and associate web-URL sources. NO fetching, scraping or downloads in this slice.
+ID: E01a (Study activity history) — COMPLETE pending user review
+State: feat/Events worktree `/Users/satish/.local/share/opencode/worktree/b96c9b/sources` (branched from feat/Sources d66d82e); backend 166/0 green
+Goal: Persist world-history events atomically with the study state changes they describe, and read them back bounded. Study lifecycle ONLY in this slice.
+
+## E01a scope and what was done
+1. `WorldEvent` entity (world_events): UUID, occurred_at, kind, description≤500, optional EntityReference target (embedded, both-or-neither). Immutable by construction: no version, no update path, one INSERT inside the caller's transaction. NOT event sourcing — events describe committed facts and are never replayed.
+2. `WorldEventKind`: WORLD_STARTED + STUDY_SESSION_CREATED/STARTED/AUTO_PAUSED/PAUSED/RESUMED/FINISHED/RECOVERED. StudySessionService appends exactly one event per committed transition, including per-victim AUTO_PAUSED events under D06. Rejected transitions write nothing.
+3. `GET /api/events` (read-only): kind / targetType+targetId filters, PageEnvelope, size cap 100, newest-first with id tie-break; targetType and targetId must come together (400 otherwise); unknown enum params → 400. There is NO write endpoint — inventing history over HTTP is not a feature.
+4. Runner now persists the single first WORLD_STARTED event when history is empty (idempotent guard, honest start of history).
+5. EntityType gained STUDY_SESSION; validateContext covers it (a session is never a context target).
+
+## Verification evidence (E01a)
+- Commands: `. dbenv && sh mvnw verify`, `git diff --check`.
+- Result: BUILD SUCCESS, Tests run: 166, Failures: 0, Errors: 0 (baseline 158).
+- Atomicity proven: caller-transaction rollback test (Ghost event never persists — a REQUIRES_NEW implementation would fail by construction); rejected transitions (double-finish, recover non-active, start unknown) leave zero events; full ordered trail for a two-session lifecycle incl. cross auto-pauses (D06) on both trails.
+- Test-side correction during verification: expected B's trail wrong — resuming A auto-pauses B (D06), so B's trail ends AUTO_PAUSED. Backend behavior was correct; assertion fixed.
+
+## Previous state
+Sources reliability pass complete on feat/Sources (158/0 at d66d82e).
+
+## Next task
+User decision: merge order for frontend (Sources → Events), then U01 dashboard wiring or W01 workspace model; open: rename/summary event granularity.
 
 ## R01a scope and what was done
 1. Package `com.shaktee.nalok.sources`. `SavedSource` (UUID, @Version, url + url_key, title≤200 required, optional description≤2000, reversible archive flag, createdAt/updatedAt). The URL is the record's identity: absolute http/https only, host required, no whitespace/control characters, ≤2048 chars, stored VERBATIM (never re-cased — `http://Example.com` and `http://example.com` are different records), immutable after creation (D13).
