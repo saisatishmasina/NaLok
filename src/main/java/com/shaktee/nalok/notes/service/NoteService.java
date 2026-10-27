@@ -49,16 +49,17 @@ public class NoteService {
 
     /**
      * Creation records the initial revision so even never-edited writing has
-     * a preserved moment.
+     * a preserved moment. The revision counter is set before the first
+     * insert, so a fresh note is a single INSERT at version 0 — no phantom
+     * version bump on creation.
      */
     @Transactional
     public Note createNote(String title, String body, NoteKind kind) {
         Instant now = clock.instant();
         Note note = new Note(title, body, kind, now);
-        // save() merges a transient entity with a preset UUID: continue with
-        // the returned managed copy, or later in-memory changes are lost.
+        note.revisionRecorded(now);
         Note saved = noteRepository.save(note);
-        recordRevision(saved, now);
+        noteRevisionRepository.save(new NoteRevision(saved, 1, now));
         return saved;
     }
 

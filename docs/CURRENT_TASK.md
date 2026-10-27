@@ -1,8 +1,8 @@
 # Current task
 
-ID: N01a (standalone notes + immutable revisions) — COMPLETE pending user review
-State: feat/Notes worktree `/Users/satish/.local/share/opencode/worktree/notes`; backend 116/0 green; commit made; N01b (associations) next
-Goal: Independent Markdown notes that preserve every content-changing explicit save.
+ID: N01 (Notes module) — COMPLETE pending user review
+State: N01a+N01b+N01c done on feat/Notes (backend 130/0); N01d (Notes UI) is the frontend session's task once it consumes this contract
+Goal: Independent notes with revision history, safe associations, REST contract.
 
 ## N01a scope and what was done
 1. Package `com.shaktee.nalok.notes` (model/repository/service only — REST is N01c). `Note` (UUID, @Version, title≤200, Markdown body stored raw, NoteKind NOTE/THOUGHT/QUESTION/DECISION/CHECKPOINT, reversible archive flag, createdAt/updatedAt, latestRevisionNumber separate from the JPA version). `NoteRevision` immutable snapshot with FK to the note and unique (note_id, revision_number); revision numbers start at 1.
@@ -16,8 +16,21 @@ Goal: Independent Markdown notes that preserve every content-changing explicit s
 - Two real bugs found and fixed during verification, both mine, both merge-semantics: `noteRepository.save()` on a transient entity with a preset UUID calls `merge()`, so `revisionRecorded()` was incrementing the discarded original — createNote now continues with the returned managed copy. Same lesson as S03, different disguise; recorded in TESTING.md guidance.
 
 ## Next task
-ID: N01b
-Goal: Attach/reuse/unlink associations (notes ↔ projects, sections, study sessions) via explicit FK link tables with unique constraints; unlink never deletes the note; section-linked notes reachable project-wide; no stretching of EntityReference.
+ID: N01d (frontend)
+Goal: Notes editor/list consuming the /api/notes contract below; open from Study and Projects via association endpoints.
+
+## N01b scope and what was done
+1. Three link entities with real FKs and unique (note_id, target_id): note_project_links, note_section_links, note_session_links; linkedAt records association time, never authorship.
+2. `NoteLinkService`: attach is idempotent (single row, original linkedAt), unlink removes only the link row (unknown-target no-op), unknown note/target → NotFound; section-linked notes reachable project-wide via section→project join query, deduped against direct links; cross-module existence checks use Projects/Study services.
+3. No hard delete anywhere; target deletion has no existing path and FKs would block it (RESTRICT) if ever added.
+
+## N01c scope and what was done
+1. `NotesController` /api/notes, thin over services; DTOs only (NoteDto/NoteSummaryDto/NoteRevisionDto/NoteLinksDto); version exposed so clients send expectedVersion.
+2. Contract: POST /api/notes (201), GET /api/notes (kind/archived/page/size → PageEnvelope, summaries without body), GET/PUT /api/notes/{id} (PUT requires expectedVersion; mismatch → 409 Concurrent update), POST /api/notes/{id}/archive|restore, GET /api/notes/{id}/revisions[/{rev}], GET /api/notes/{id}/links, POST/DELETE /api/notes/{id}/links/{projects|sections|sessions}/{targetId} (attach 200 with updated links, idempotent; unlink 204), GET /api/notes/for-project|for-section|for-session/{id} (summaries; project-wide includes section-linked; unknown target 404).
+3. Error conventions reused unchanged (404 Resource not found / 400 Invalid request / 409): no shared-file edits.
+
+## N01c verification
+- NotesApiIntegrationTest (MockMvc, 6 tests): create→get→PUT round trip with Unicode body; revision history via API (2 revisions, oldest preserved); stale expectedVersion → 409 + server content intact; blank title/missing expectedVersion → 400; unknown id/revision → 404; list summaries exclude body + kind/archived filters; archive→filter→restore; link attach/duplicate/unlink + for-project/section/session retrieval + unknown-target 404s.
 
 
 ## Review findings → fixes (all applied)

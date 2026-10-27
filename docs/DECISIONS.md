@@ -84,8 +84,9 @@ content changes (no revision, JPA version moves).
 - Edits carry an expectedVersion; a mismatch is rejected before any
   mutation, preserving the newer server content and the client's draft.
 - Association cardinality (multiple FK link tables per target type, no
-  owning context, unlink-safe) is accepted in principle for N01b; exact
-  link-table design lands with that task.
+  owning context, unlink-safe) — LANDED with N01b: note_project_links,
+  note_section_links, note_session_links; attach idempotent; unlink touches
+  only the link row; section-linked notes reachable project-wide.
 
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
