@@ -32,6 +32,14 @@ Disposable databases only. Use real MySQL integration tests for MySQL-specific m
 H2 success alone does not prove MySQL behavior. Testcontainers is optional if justified and available.
 No tests against personal production data. Include a restore rehearsal before public release.
 
+## Pitfall proven twice in this codebase (S03, N01a)
+`repository.save(entity)` on a TRANSIENT entity whose id is already set
+(UUID assigned in the constructor) calls `em.merge()`, not `persist()`.
+Merge copies state into a managed copy and returns it; the object you passed
+in is discarded. Any later in-memory mutation of the passed-in object is
+silently lost at flush. Rule: always continue with the instance the
+repository returns, and assert post-commit state by reloading.
+
 ## Candidate commands (confirm first)
 ./mvnw compile
 ./mvnw test

@@ -1,8 +1,24 @@
 # Current task
 
-ID: F04 (Frontend scaffold + Home dashboard) — review-correction pass
-State: COMPLETE
-Goal: Fix the six defects found when re-checking the originally-reported "complete" F04, then verify the fixes; no fabricated data anywhere.
+ID: N01a (standalone notes + immutable revisions) — COMPLETE pending user review
+State: feat/Notes worktree `/Users/satish/.local/share/opencode/worktree/notes`; backend 116/0 green; commit made; N01b (associations) next
+Goal: Independent Markdown notes that preserve every content-changing explicit save.
+
+## N01a scope and what was done
+1. Package `com.shaktee.nalok.notes` (model/repository/service only — REST is N01c). `Note` (UUID, @Version, title≤200, Markdown body stored raw, NoteKind NOTE/THOUGHT/QUESTION/DECISION/CHECKPOINT, reversible archive flag, createdAt/updatedAt, latestRevisionNumber separate from the JPA version). `NoteRevision` immutable snapshot with FK to the note and unique (note_id, revision_number); revision numbers start at 1.
+2. `NoteService` (one class, transaction boundary owner): createNote records the initial revision; updateNote takes an expectedVersion and rejects a mismatch BEFORE any mutation (ObjectOptimisticLockingFailureException → 409 via the existing shared handler, no shared-file edits); content-changing saves record exactly one revision, unchanged saves record none and do not move updatedAt; archive/restore are reversible, not content changes (no revision, but version moves).
+3. Bounded list queries: listNotes(kind, archived, page, size) newest-by-updatedAt with id tie-break, page size capped at 100; listRevisions newest first; getRevision scoped to its note.
+
+## Verification evidence (N01a)
+- Commands: `sh mvnw verify` (with DB_USERNAME/DB_PASSWORD from the shared dbenv), `git diff --check`.
+- Result: BUILD SUCCESS, Tests run: 116, Failures: 0, Errors: 0, Skipped: 0; disposable nalok_opencode_test only (TestDatabaseGuard active).
+- Behavior proven: Unicode/multiline body round trip; initial revision on creation; revision 2 recorded with revision 1 preserved unchanged; unchanged save → no revision and updatedAt untouched; kind-only change → revision; stale expectedVersion rejected with content and history intact; oversized (70,000-byte) save rolls back completely — original body kept, revision count unchanged (no orphan revision); archive/restore keep content + history and do not fake a writing change; pagination disjoint/capped/kind+archived filters; revision scoping across notes; unknown note/revision → NotFound.
+- Two real bugs found and fixed during verification, both mine, both merge-semantics: `noteRepository.save()` on a transient entity with a preset UUID calls `merge()`, so `revisionRecorded()` was incrementing the discarded original — createNote now continues with the returned managed copy. Same lesson as S03, different disguise; recorded in TESTING.md guidance.
+
+## Next task
+ID: N01b
+Goal: Attach/reuse/unlink associations (notes ↔ projects, sections, study sessions) via explicit FK link tables with unique constraints; unlink never deletes the note; section-linked notes reachable project-wide; no stretching of EntityReference.
+
 
 ## Review findings → fixes (all applied)
 1. Home treated `204` (no current session) as "still loading": `CardBody` conflated `data === null` with loading. Fixed: loading is decided by the flag alone; nullable `null` is rendered by the card (honest "Nothing running" state).

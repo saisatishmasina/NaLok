@@ -65,6 +65,7 @@ Study S01+S02 (local commit 7e6e10a, then hardening fixes): EntityReference embe
 - Honest remainders: no browser/interaction tests yet (Playwright is an open decision, not silently added); aggregation still happens in Java (span projections only — SQL-side aggregation remains deferred with its documented timezone-binding reason); committing/pushing feat/Study is still pending the user's decision.
 
 ## Verification evidence (current)
+- N01a (feat/Notes worktree, branch feat/Notes based on 02e53ee): `sh mvnw verify` BUILD SUCCESS, Tests run: 116, Failures: 0, Errors: 0, Skipped: 0. Notes module `com.shaktee.nalok.notes` (model/repository/service, no REST yet — N01c): independent Markdown notes, NoteKind taxonomy, reversible archive, immutable NoteRevision per content-changing save, expected-version edits rejected before mutation, bounded paginated lists, rollback proven (no partial update, no orphan revision). See CURRENT_TASK and DECISIONS D10.
 - Fresh `./mvnw verify`: BUILD SUCCESS, Tests run: 67, Failures: 0, Errors: 0, Skipped: 0 (no leftover intentional-failure reports).
 - `git diff --check`: clean.
 - Test reports confirm all Spring contexts connect to nalok_opencode_test only.

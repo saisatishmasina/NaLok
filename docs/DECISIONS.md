@@ -72,6 +72,21 @@ Hardened same day (2026-10-26, hardening pass):
 - Dangling study context targets answer HTTP 404 ("Context target not found"),
   not 400.
 
+## D10 — Notes preserve every content-changing explicit save (2026-10-26)
+Accepted. A note's writing history is recorded as immutable NoteRevision
+snapshots: creation records revision 1; every save that changes title, body
+or kind records exactly one more; an unchanged save records nothing and does
+not move updatedAt; archive/restore are record-level state changes, never
+content changes (no revision, JPA version moves).
+- Revisions answer "how did this piece of writing change"; separate
+  THOUGHT/DECISION/CHECKPOINT notes answer "how did my understanding
+  develop" — no event sourcing or WorldEvent system needed for this.
+- Edits carry an expectedVersion; a mismatch is rejected before any
+  mutation, preserving the newer server content and the client's draft.
+- Association cardinality (multiple FK link tables per target type, no
+  owning context, unlink-safe) is accepted in principle for N01b; exact
+  link-table design lands with that task.
+
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
 - Manual correction of recorded study duration.
