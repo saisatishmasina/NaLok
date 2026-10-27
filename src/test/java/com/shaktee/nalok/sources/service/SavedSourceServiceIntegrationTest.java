@@ -3,7 +3,14 @@ package com.shaktee.nalok.sources.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -123,6 +130,91 @@ class SavedSourceServiceIntegrationTest {
         assertThat(sourceService.getSource(archived.getId()).isArchived()).isFalse();
         assertThatThrownBy(() -> sourceService.restoreSource(archived.getId()))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void simultaneousDuplicateCreatesYieldExactlyOneRecordAndCleanConflict() throws Exception {
+        String url = "https://race-create.test/one";
+        long before = sourceService.listSources(null, 0, 1).getTotalElements();
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Object> outcomes;
+        try {
+            List<Future<Object>> results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                final String tag = "create-" + i;
+                results.add(pool.submit(() -> {
+                    barrier.await(5, TimeUnit.SECONDS);
+                    try {
+                        return (Object) sourceService.createSource("Race " + tag, url, null);
+                    } catch (IllegalStateException conflict) {
+                        return (Object) conflict;
+                    }
+                }));
+            }
+            // Collect while the pool is still alive; any unexpected failure
+            // surfaces here and fails the test.
+            outcomes = new ArrayList<>();
+            outcomes.add(results.get(0).get(10, TimeUnit.SECONDS));
+            outcomes.add(results.get(1).get(10, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(outcomes.stream().filter(o -> o instanceof SavedSource).count())
+                .as("exactly one creator wins").isEqualTo(1);
+        assertThat(outcomes.stream().filter(o -> o instanceof IllegalStateException).count())
+                .as("the loser answers the URL conflict (HTTP 409)").isEqualTo(1);
+        assertThat(sourceService.listSources(null, 0, 1).getTotalElements())
+                .as("exactly one record was persisted")
+                .isEqualTo(before + 1);
+    }
+
+    @Test
+    void simultaneousEditsWithSameVersionLetExactlyOneWin() throws Exception {
+        SavedSource created = sourceService.createSource(
+                "Edit race", "https://race-edit.test/one", null);
+        UUID id = created.getId();
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Object> outcomes;
+        try {
+            List<Future<Object>> results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                final String tag = "edit-" + i;
+                results.add(pool.submit(() -> {
+                    // Both editors read the SAME committed version, then are
+                    // released together: with no second table there is no
+                    // lock-order cycle, so the row-level @Version alone must
+                    // produce exactly one winner and one clean conflict.
+                    SavedSource loaded = sourceService.getSource(id);
+                    barrier.await(5, TimeUnit.SECONDS);
+                    try {
+                        return (Object) sourceService.updateSource(id,
+                                "Race " + tag, "Body " + tag, loaded.getVersion());
+                    } catch (ObjectOptimisticLockingFailureException stale) {
+                        return (Object) stale;
+                    }
+                }));
+            }
+            outcomes = new ArrayList<>();
+            outcomes.add(results.get(0).get(10, TimeUnit.SECONDS));
+            outcomes.add(results.get(1).get(10, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(outcomes.stream().filter(o -> o instanceof SavedSource).count())
+                .as("exactly one editor wins").isEqualTo(1);
+        assertThat(outcomes.stream()
+                .filter(o -> o instanceof ObjectOptimisticLockingFailureException).count())
+                .as("the loser answers a version conflict (HTTP 409)").isEqualTo(1);
+
+        SavedSource reloaded = sourceService.getSource(id);
+        assertThat(reloaded.getTitle()).startsWith("Race edit-");
+        assertThat(reloaded.getVersion()).isEqualTo(1);
     }
 
     @Test

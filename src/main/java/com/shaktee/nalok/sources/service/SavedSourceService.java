@@ -52,10 +52,31 @@ public class SavedSourceService {
         }
         Instant now = clock.instant();
         try {
-            return sourceRepository.save(new SavedSource(title, url, description, now));
-        } catch (DataIntegrityViolationException lostRace) {
-            throw new IllegalStateException("Source with this URL is already saved");
+            // saveAndFlush: the INSERT (and its unique-key verdict) happens
+            // HERE, inside the guarded window. A plain save() would defer the
+            // insert to commit, where the constraint failure escapes this
+            // catch and surfaces as a database error instead of the conflict.
+            return sourceRepository.saveAndFlush(
+                    new SavedSource(title, url, description, now));
+        } catch (DataIntegrityViolationException rejected) {
+            // Do NOT re-check with a query here: the still-open persistence
+            // context would re-flush the failed INSERT and rethrow the same
+            // database error. Verify the violated constraint by name instead;
+            // any other integrity failure keeps its own (honest) exception.
+            if (isDuplicateUrlKey(rejected)) {
+                throw new IllegalStateException("Source with this URL is already saved");
+            }
+            throw rejected;
         }
+    }
+
+    private static boolean isDuplicateUrlKey(DataIntegrityViolationException rejected) {
+        Throwable cause = rejected.getCause();
+        if (!(cause instanceof org.hibernate.exception.ConstraintViolationException constraint)) {
+            return false;
+        }
+        String name = constraint.getConstraintName();
+        return name != null && name.contains("uk_saved_sources_url_key");
     }
 
     public SavedSource getSource(UUID sourceId) {
