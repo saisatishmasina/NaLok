@@ -253,6 +253,57 @@ class NotesApiIntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void contextPageEndpointsAnswerBoundedSummariesWithDedup() throws Exception {
+        UUID direct = noteService.createNote("Ctx direct", "b1", null).getId();
+        UUID viaSection = noteService.createNote("Ctx section", "b2", null).getId();
+        UUID projectId = projectService.createProject("Ctx page project", null).getId();
+        UUID sectionId = projectSectionService.createSection(
+                projectId, "Ctx page section", null, 0).getId();
+        UUID sessionId = studySessionService.createSession("Ctx page session", null, null)
+                .getId();
+
+        mockMvc.perform(post("/api/notes/{id}/links/projects/{pid}", direct, projectId))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/notes/{id}/links/projects/{pid}", viaSection, projectId))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/notes/{id}/links/sections/{sid}", viaSection, sectionId))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/notes/{id}/links/sessions/{sid}", viaSection, sessionId))
+                .andExpect(status().isOk());
+
+        // Project page: direct + section-linked, deduplicated, summaries
+        // without bodies.
+        mockMvc.perform(get("/api/notes/for-project/{pid}/page", projectId)
+                        .param("page", "0").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].body").doesNotExist())
+                .andExpect(jsonPath("$.totalElements").value(2));
+        mockMvc.perform(get("/api/notes/for-project/{pid}/page", projectId)
+                        .param("page", "1").param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1));
+
+        mockMvc.perform(get("/api/notes/for-section/{sid}/page", sectionId)
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(viaSection.toString()));
+
+        mockMvc.perform(get("/api/notes/for-session/{sid}/page", sessionId)
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(viaSection.toString()));
+
+        // Unknown targets answer 404, same as the unpaginated lists.
+        mockMvc.perform(get("/api/notes/for-project/{pid}/page", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/notes/for-session/{sid}/page", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+    }
+
     private UUID readId(MvcResult result) throws Exception {
         // Deterministic UUID extraction without a JSON library dependency.
         Matcher matcher = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"")

@@ -1,8 +1,19 @@
 # Current task
 
-ID: N02 (Notes reliability pass) — COMPLETE pending user review
-State: feat/Notes worktree `/Users/satish/.local/share/opencode/worktree/notes`; backend 136/0 green; next: R01a Saved Sources backend (web-URL-only first slice recommended)
-Goal: Make concurrent attaching/writing predictable, bound retrieval, and validate body size before the database does.
+ID: N02 follow-up (review-correction pass) — COMPLETE pending user review
+State: feat/Notes worktree `/Users/satish/.local/share/opencode/worktree/notes`; backend 140/0 green; next: R01a Saved Sources backend (web-URL-only first slice recommended)
+Goal: Close the four audit gaps from the reported-complete N02: exact race-outcome proof, bounded context retrieval, projection-based revision pages, and lock-release probes.
+
+## What this pass changed
+1. Race test rebuilt: both editors reload their note INSIDE the raced section, and the test asserts the exact outcome set — exactly one winner (Note) and exactly one `ObjectOptimisticLockingFailureException` (409); any other outcome fails. The stricter test exposed a genuine InnoDB deadlock (inserts flush before updates → opposite lock order on note row vs revision index). Fix (D12): `updateNote` takes the note row lock first (`NoteRepository.findByIdForUpdate`, SELECT ... FOR UPDATE), so the loser waits there and fails the version predicate cleanly.
+2. Context retrieval bounded DB-side: `findNotesForProject` (direct + section links, deduped via `in` subqueries), `findNotesForSection`, `findNotesForSession` (all Note-rooted so updatedAt sorting resolves); service page methods with the shared 100 cap; new endpoints `GET /api/notes/for-project/{id}/page`, `/for-section/{id}/page`, `/for-session/{id}/page` returning summary envelopes (no bodies), 404 on unknown targets. Unpaginated lists remain for small panels.
+3. `GET /api/notes/{id}/revisions/page` now selects a closed projection `NoteRevisionSummary` (id, revisionNumber, title, kind, recordedAt) — bodies are never loaded when paging history; full content stays on the per-revision detail path.
+4. Note-link guard release proven cross-connection (IS_USED_LOCK on separate physical connections) after BOTH commit and rollback, plus a post-rollback attach-success assertion.
+
+## Verification
+- `. dbenv && sh mvnw verify` → BUILD SUCCESS, Tests run: 140, Failures: 0, Errors: 0 (baseline 136).
+- `git diff --check` clean. Docs updated (STATUS, DECISIONS D12).
+- Attribution correction recorded in STATUS: the missing-table incident is no longer attributed to the frontend session on that evidence alone.
 
 ## N01a scope and what was done
 1. Package `com.shaktee.nalok.notes` (model/repository/service only — REST is N01c). `Note` (UUID, @Version, title≤200, Markdown body stored raw, NoteKind NOTE/THOUGHT/QUESTION/DECISION/CHECKPOINT, reversible archive flag, createdAt/updatedAt, latestRevisionNumber separate from the JPA version). `NoteRevision` immutable snapshot with FK to the note and unique (note_id, revision_number); revision numbers start at 1.

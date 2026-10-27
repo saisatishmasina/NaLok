@@ -3,6 +3,8 @@ package com.shaktee.nalok.notes.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -12,9 +14,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import javax.sql.DataSource;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Page;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.shaktee.nalok.knowledge.study.model.StudySession;
@@ -58,6 +63,9 @@ class NoteLinkServiceIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSource dataSource;
 
     @Test
     void noteIsReusedAcrossTwoProjectsWithoutCopyingContent() {
@@ -135,6 +143,99 @@ class NoteLinkServiceIntegrationTest {
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 
         assertThat(noteLinkService.listProjectLinks(note.getId())).isEmpty();
+    }
+
+    @Test
+    void linkGuardIsReleasedAfterCommit() throws Exception {
+        Note note = noteService.createNote("Guard commit", "Body", NoteKind.NOTE);
+        Project project = projectService.createProject("Guard commit target", null);
+
+        noteLinkService.linkToProject(note.getId(), project.getId());
+
+        // Prove release from a DIFFERENT physical connection: MySQL named
+        // locks are reentrant on the holding connection, so a same-connection
+        // check would be inconclusive.
+        try (Connection held = dataSource.getConnection();
+             Connection probe = dataSource.getConnection()) {
+            assertThat(isUsedLock(probe, "nalok:note-links:" + note.getId()))
+                    .as("note-link guard must be released after commit")
+                    .isNull();
+        }
+    }
+
+    @Test
+    void linkGuardIsReleasedAfterRollback() throws Exception {
+        Note note = noteService.createNote("Guard rollback", "Body", NoteKind.NOTE);
+
+        // Attaching to an unknown project acquires the guard, then fails and
+        // rolls back. A leaked guard would make the next attach time out.
+        assertThatThrownBy(() -> noteLinkService.linkToProject(note.getId(),
+                UUID.randomUUID()))
+                .isInstanceOf(NotFoundException.class);
+
+        try (Connection held = dataSource.getConnection();
+             Connection probe = dataSource.getConnection()) {
+            assertThat(isUsedLock(probe, "nalok:note-links:" + note.getId()))
+                    .as("note-link guard must be released after rollback")
+                    .isNull();
+        }
+
+        // And the guard actually closed the window: a later attach succeeds.
+        Project project = projectService.createProject("After rollback", null);
+        assertThat(noteLinkService.linkToProject(note.getId(), project.getId()))
+                .isNotNull();
+    }
+
+    /**
+     * NULL when the named lock is free; otherwise the holder's connection id.
+     * Uses a raw statement to keep the probe off any transaction context.
+     */
+    private static Object isUsedLock(Connection connection, String lockName) throws Exception {
+        try (ResultSet result = connection.createStatement()
+                .executeQuery("SELECT IS_USED_LOCK('" + lockName + "')")) {
+            result.next();
+            return result.getObject(1);
+        }
+    }
+
+    private List<UUID> pageIds(Page<Note> page) {
+        return page.getContent().stream().map(Note::getId).toList();
+    }
+
+    @Test
+    void contextPagesAreBoundedDedupedAndDisjoint() {
+        Note first = noteService.createNote("Ctx 1", "1", NoteKind.NOTE);
+        Note second = noteService.createNote("Ctx 2", "2", NoteKind.NOTE);
+        Note third = noteService.createNote("Ctx 3", "3", NoteKind.NOTE);
+        Project project = projectService.createProject("Paged context", null);
+        ProjectSection section = projectSectionService.createSection(
+                project.getId(), "Paged section", null, 0);
+
+        noteLinkService.linkToProject(first.getId(), project.getId());
+        noteLinkService.linkToProject(second.getId(), project.getId());
+        noteLinkService.linkToProject(third.getId(), project.getId());
+        noteLinkService.linkToSection(second.getId(), section.getId());
+
+        // Project page 1/1: direct + section links, deduplicated DB-side.
+        Page<Note> full = noteLinkService.listNotesForProjectPage(project.getId(), 0, 10);
+        assertThat(full.getTotalElements()).isEqualTo(3);
+        assertThat(full.getContent()).extracting(Note::getId)
+                .containsExactlyInAnyOrder(first.getId(), second.getId(), third.getId());
+
+        // Two disjoint pages of size 2 cover all three.
+        Page<Note> page0 = noteLinkService.listNotesForProjectPage(project.getId(), 0, 2);
+        Page<Note> page1 = noteLinkService.listNotesForProjectPage(project.getId(), 1, 2);
+        assertThat(page0.getContent()).hasSize(2);
+        assertThat(page1.getContent()).hasSize(1);
+        assertThat(pageIds(page0)).doesNotContainAnyElementsOf(pageIds(page1));
+        assertThat(full.getTotalElements()).isEqualTo(3);
+
+        // Section page answers only the section-linked note.
+        Page<Note> forSection =
+                noteLinkService.listNotesForSectionPage(section.getId(), 0, 10);
+        assertThat(forSection.getTotalElements()).isEqualTo(1);
+        assertThat(forSection.getContent()).extracting(Note::getId)
+                .containsExactly(second.getId());
     }
 
     @Test

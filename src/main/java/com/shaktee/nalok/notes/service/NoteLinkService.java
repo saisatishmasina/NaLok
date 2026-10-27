@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +52,7 @@ public class NoteLinkService {
 
     private static final String NOTE_LINK_GUARD_PREFIX = "nalok:note-links:";
     private static final int GUARD_TIMEOUT_SECONDS = 10;
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final NoteRepository noteRepository;
     private final NoteProjectLinkRepository projectLinkRepository;
@@ -193,6 +197,33 @@ public class NoteLinkService {
         return newestFirst(sessionLinkRepository
                 .findBySession_IdOrderByLinkedAtAsc(sessionId)
                 .stream().map(NoteSessionLink::getNote).toList());
+    }
+
+    /**
+     * Bounded context pages: the database does the union and dedup for
+     * projects (direct + section links) and plain paging elsewhere; the
+     * unpaginated variants above remain for small, fully-rendered panels.
+     */
+    public Page<Note> listNotesForProjectPage(UUID projectId, int page, int size) {
+        requireProject(projectId);
+        return projectLinkRepository.findNotesForProject(projectId, pageRequest(page, size));
+    }
+
+    public Page<Note> listNotesForSectionPage(UUID sectionId, int page, int size) {
+        requireSection(sectionId);
+        return sectionLinkRepository.findNotesForSection(sectionId, pageRequest(page, size));
+    }
+
+    public Page<Note> listNotesForSessionPage(UUID sessionId, int page, int size) {
+        studySessionService.getSession(sessionId);
+        return sessionLinkRepository.findNotesForSession(sessionId, pageRequest(page, size));
+    }
+
+    private PageRequest pageRequest(int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        return PageRequest.of(safePage, safeSize,
+                Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.asc("id")));
     }
 
     private Note findNote(UUID noteId) {

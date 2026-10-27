@@ -24,6 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteKind;
 import com.shaktee.nalok.notes.model.NoteRevision;
+import com.shaktee.nalok.notes.model.NoteRevisionSummary;
 import com.shaktee.nalok.notes.repository.NoteRepository;
 import com.shaktee.nalok.notes.repository.NoteRevisionRepository;
 import com.shaktee.nalok.web.NotFoundException;
@@ -205,7 +206,7 @@ class NoteServiceIntegrationTest {
 
         CyclicBarrier barrier = new CyclicBarrier(2);
         ExecutorService pool = Executors.newFixedThreadPool(2);
-        long winners;
+        List<Object> outcomes;
         try {
             List<Future<Object>> results = new ArrayList<>();
             for (int i = 0; i < 2; i++) {
@@ -213,33 +214,37 @@ class NoteServiceIntegrationTest {
                 results.add(pool.submit(() -> {
                     // Both editors read the SAME committed version, then are
                     // released together: the service-level version check
-                    // passes for both, so the race must be closed by the
-                    // row-level @Version — exactly one write may win.
+                    // passes for both (or loses to an already-committed
+                    // winner), so the race must be closed by the row-level
+                    // @Version — the loser must answer a VERSION CONFLICT,
+                    // not any other error.
                     Note loaded = noteService.getNote(id);
                     barrier.await(5, TimeUnit.SECONDS);
                     try {
-                        return noteService.updateNote(id, "Race " + tag,
+                        return (Object) noteService.updateNote(id, "Race " + tag,
                                 "Body " + tag, NoteKind.NOTE, loaded.getVersion());
                     } catch (ObjectOptimisticLockingFailureException stale) {
-                        return stale;
+                        return (Object) stale;
                     }
                 }));
             }
             // Collect while the pool is still alive: shutdownNow would
-            // interrupt the workers mid-transaction.
-            winners = results.stream()
-                    .filter(future -> {
-                        try {
-                            return future.get(10, TimeUnit.SECONDS) instanceof Note;
-                        } catch (Exception e) {
-                            return false;
-                        }
-                    })
-                    .count();
+            // interrupt the workers mid-transaction. Any unexpected worker
+            // exception surfaces here and fails the test — only the two
+            // legitimate outcomes (winner note, version conflict) may exist.
+            outcomes = new ArrayList<>();
+            outcomes.add(results.get(0).get(10, TimeUnit.SECONDS));
+            outcomes.add(results.get(1).get(10, TimeUnit.SECONDS));
         } finally {
             pool.shutdownNow();
         }
-        assertThat(winners).isEqualTo(1);
+        assertThat(outcomes.stream().filter(o -> o instanceof Note).count())
+                .as("exactly one editor wins").isEqualTo(1);
+        assertThat(outcomes.stream()
+                .filter(o -> o instanceof ObjectOptimisticLockingFailureException)
+                .count())
+                .as("the other editor answers a version conflict (HTTP 409)")
+                .isEqualTo(1);
 
         Note reloaded = noteService.getNote(id);
         assertThat(reloaded.getVersion()).isEqualTo(1);
@@ -267,22 +272,22 @@ class NoteServiceIntegrationTest {
                     noteService.getNote(id).getVersion());
         }
 
-        Page<NoteRevision> page0 = noteService.listRevisionPage(id, 0, 3);
-        Page<NoteRevision> page1 = noteService.listRevisionPage(id, 1, 3);
-        Page<NoteRevision> page2 = noteService.listRevisionPage(id, 2, 3);
+        Page<NoteRevisionSummary> page0 = noteService.listRevisionPage(id, 0, 3);
+        Page<NoteRevisionSummary> page1 = noteService.listRevisionPage(id, 1, 3);
+        Page<NoteRevisionSummary> page2 = noteService.listRevisionPage(id, 2, 3);
 
         assertThat(page0.getTotalElements()).isEqualTo(8);
         assertThat(page0.getContent())
-                .extracting(NoteRevision::getRevisionNumber)
+                .extracting(NoteRevisionSummary::getRevisionNumber)
                 .containsExactly(8L, 7L, 6L);
         assertThat(page1.getContent())
-                .extracting(NoteRevision::getRevisionNumber)
+                .extracting(NoteRevisionSummary::getRevisionNumber)
                 .containsExactly(5L, 4L, 3L);
         assertThat(page2.getContent())
-                .extracting(NoteRevision::getRevisionNumber)
+                .extracting(NoteRevisionSummary::getRevisionNumber)
                 .containsExactly(2L, 1L);
 
-        Page<NoteRevision> capped = noteService.listRevisionPage(id, 0, 500);
+        Page<NoteRevisionSummary> capped = noteService.listRevisionPage(id, 0, 500);
         assertThat(capped.getSize()).isEqualTo(100);
     }
 

@@ -6,6 +6,7 @@ import java.util.UUID;
 import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteKind;
 import com.shaktee.nalok.notes.model.NoteRevision;
+import com.shaktee.nalok.notes.model.NoteRevisionSummary;
 
 /**
  * Bounded API representations of notes. Never expose the JPA entities
@@ -77,10 +78,10 @@ public record NoteDto(
             NoteKind kind,
             Instant recordedAt) {
 
-        public static NoteRevisionSummaryDto of(NoteRevision revision) {
-            return new NoteRevisionSummaryDto(revision.getId(),
-                    revision.getRevisionNumber(), revision.getTitle(),
-                    revision.getKind(), revision.getRecordedAt());
+        public static NoteRevisionSummaryDto of(NoteRevisionSummary summary) {
+            return new NoteRevisionSummaryDto(summary.getId(),
+                    summary.getRevisionNumber(), summary.getTitle(),
+                    summary.getKind(), summary.getRecordedAt());
         }
     }
 }

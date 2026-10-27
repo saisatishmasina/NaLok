@@ -99,6 +99,31 @@ expectedVersion check is a UX fast path, not the integrity mechanism.
 - New bounded endpoint GET /api/notes/{id}/revisions/page (summaries
   without bodies); the full /revisions list is unchanged for the editor.
 
+## D12 — Deterministic lock ordering for concurrent note edits (2026-10-26)
+- Context: the tightened N02 race test (both editors released from a barrier
+  after loading the same committed version) exposed a real InnoDB deadlock,
+  not a clean conflict: Hibernate flushes inserts before updates, so two
+  transactions racing on one note could each hold one of {note row lock,
+  note_revisions unique-index insert lock} and wait on the other — MySQL
+  killed a victim and the losing editor received a lock error (HTTP 500)
+  instead of the intended version conflict (409).
+- Options: (a) accept the deadlock and tell clients to retry any 500;
+  (b) serialize editors per note with a named lock like attaching;
+  (c) deterministic row-lock ordering inside the edit transaction.
+- Chosen: (c). `updateNote` now takes the note row lock first
+  (`NoteRepository.findByIdForUpdate`, `SELECT ... FOR UPDATE`); the loser
+  waits at that single well-defined point, then fails the version predicate
+  as a clean `ObjectOptimisticLockingFailureException` (409). No new
+  distributed-lock surface, no retry protocol.
+- Consequences: row-level @Version remains the integrity mechanism; the
+  pessimistic read only fixes lock-acquisition ORDER. Edits to the same
+  note serialize briefly (row lock held to commit) — acceptable for a
+  note-editing workload. Attaching keeps its own named lock (D11).
+- Tests: race test now asserts the exact outcome set — exactly one winner
+  (a Note) and exactly one `ObjectOptimisticLockingFailureException`; any
+  other worker outcome fails the test. Previously it only counted winners
+  and swallowed every exception as a "loss".
+
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
 - Manual correction of recorded study duration.

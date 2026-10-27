@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteKind;
 import com.shaktee.nalok.notes.model.NoteRevision;
+import com.shaktee.nalok.notes.model.NoteRevisionSummary;
 import com.shaktee.nalok.notes.repository.NoteRepository;
 import com.shaktee.nalok.notes.repository.NoteRevisionRepository;
 import com.shaktee.nalok.web.NotFoundException;
@@ -76,7 +77,12 @@ public class NoteService {
     @Transactional
     public Note updateNote(UUID noteId, String title, String body, NoteKind kind,
             long expectedVersion) {
-        Note note = findNote(noteId);
+        // Locking read first (see NoteRepository.findByIdForUpdate): this
+        // serializes concurrent editors on the note row before either can
+        // touch note_revisions, so the race loser answers a clean version
+        // conflict rather than a database deadlock.
+        Note note = noteRepository.findByIdForUpdate(noteId)
+                .orElseThrow(() -> new NotFoundException("Note not found: " + noteId));
         if (note.getVersion() != expectedVersion) {
             throw new ObjectOptimisticLockingFailureException(Note.class, noteId);
         }
@@ -146,18 +152,18 @@ public class NoteService {
     }
 
     /**
-     * Bounded revision-history page, newest first. The unpaginated list above
-     * stays for the editor's full trail; this bounded page keeps heavily
-     * revised notes from loading every snapshot at once.
+     * Bounded revision-history page, newest first, loaded as a closed
+     * projection (metadata only — bodies are never selected). The
+     * unpaginated list above stays for the editor's full trail.
      */
-    public Page<NoteRevision> listRevisionPage(UUID noteId, int page, int size) {
+    public Page<NoteRevisionSummary> listRevisionPage(UUID noteId, int page, int size) {
         findNote(noteId);
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
 
         Pageable pageRequest = PageRequest.of(safePage, safeSize,
                 Sort.by(Sort.Order.desc("revisionNumber")));
-        return noteRevisionRepository.findByNote_Id(noteId, pageRequest);
+        return noteRevisionRepository.findSummariesByNote_Id(noteId, pageRequest);
     }
 
     public NoteRevision getRevision(UUID noteId, UUID revisionId) {

@@ -1,5 +1,23 @@
 # Status — audited 2026-10-26
 
+## N02 follow-up correction pass (feat/Notes, 2026-10-26)
+- Audit of the reported-complete N02 found four real gaps; all closed:
+  (1) the concurrent-edit test did not actually prove the loser receives a
+  version conflict — rebuilt with exact outcome assertions, which exposed a
+  REAL InnoDB deadlock, fixed by deterministic lock ordering (D12);
+  (2) context retrieval was unbounded → DB-side paged queries + page
+  endpoints for project/section/session notes; (3) revision pages loaded
+  bodies → closed `NoteRevisionSummary` projection; (4) note-link named-lock
+  release had no cross-connection proof → IS_USED_LOCK probes after commit
+  and rollback added.
+- Verification: `sh mvnw verify` → BUILD SUCCESS, Tests run: 140,
+  Failures: 0, Errors: 0 (baseline was 136). `git diff --check` clean.
+- Attribution correction: the earlier cross-session DB incident is no longer
+  attributed to the frontend session by the missing-table evidence alone; it
+  is recorded only as "concurrent worktree test runs can destroy each other's
+  schema — never run both suites simultaneously".
+- Saved Sources (R01a): NOT started.
+
 ## Reported by user, not repository-verified
 - Root Java package: com.shaktee.nalok.
 - Projects model/repository/service implemented; MySQL dependency/configuration discussed.

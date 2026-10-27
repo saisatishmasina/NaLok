@@ -3,6 +3,7 @@ package com.shaktee.nalok.notes.web;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.validation.Valid;
 
+import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteKind;
 import com.shaktee.nalok.notes.service.NoteLinkService;
 import com.shaktee.nalok.notes.service.NoteService;
@@ -184,5 +186,44 @@ public class NotesController {
         return noteLinkService.listNotesForSession(sessionId).stream()
                 .map(NoteDto.NoteSummaryDto::of)
                 .toList();
+    }
+
+    /**
+     * Bounded context pages (same semantics as the unpaginated lists:
+     * project-wide includes section-linked notes, deduplicated).
+     */
+    @GetMapping("/for-project/{projectId}/page")
+    public PageEnvelope<NoteDto.NoteSummaryDto> forProjectPage(
+            @PathVariable UUID projectId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        var pageResult = noteLinkService.listNotesForProjectPage(projectId, page, size);
+        return toSummaryEnvelope(pageResult);
+    }
+
+    @GetMapping("/for-section/{sectionId}/page")
+    public PageEnvelope<NoteDto.NoteSummaryDto> forSectionPage(
+            @PathVariable UUID sectionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        var pageResult = noteLinkService.listNotesForSectionPage(sectionId, page, size);
+        return toSummaryEnvelope(pageResult);
+    }
+
+    @GetMapping("/for-session/{sessionId}/page")
+    public PageEnvelope<NoteDto.NoteSummaryDto> forSessionPage(
+            @PathVariable UUID sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        var pageResult = noteLinkService.listNotesForSessionPage(sessionId, page, size);
+        return toSummaryEnvelope(pageResult);
+    }
+
+    private PageEnvelope<NoteDto.NoteSummaryDto> toSummaryEnvelope(Page<Note> pageResult) {
+        List<NoteDto.NoteSummaryDto> content = pageResult.getContent().stream()
+                .map(NoteDto.NoteSummaryDto::of)
+                .toList();
+        return PageEnvelope.of(content, pageResult.getNumber(), pageResult.getSize(),
+                pageResult.getTotalElements(), pageResult.getTotalPages());
     }
 }
