@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.shaktee.nalok.notes.model.NoteProjectLink;
 import com.shaktee.nalok.notes.model.NoteSectionLink;
 import com.shaktee.nalok.notes.model.NoteSessionLink;
+import com.shaktee.nalok.notes.model.NoteSourceLink;
 
 /**
  * All associations of one note, grouped by target type. linkedAt says when
@@ -15,7 +16,8 @@ import com.shaktee.nalok.notes.model.NoteSessionLink;
 public record NoteLinksDto(
         List<ProjectLink> projects,
         List<SectionLink> sections,
-        List<SessionLink> sessions) {
+        List<SessionLink> sessions,
+        List<SourceLink> sources) {
 
     public record ProjectLink(UUID projectId, Instant linkedAt) {
 
@@ -38,11 +40,20 @@ public record NoteLinksDto(
         }
     }
 
+    public record SourceLink(UUID sourceId, Instant linkedAt) {
+
+        static SourceLink of(NoteSourceLink link) {
+            return new SourceLink(link.getSource().getId(), link.getLinkedAt());
+        }
+    }
+
     public static NoteLinksDto of(List<NoteProjectLink> projects,
-            List<NoteSectionLink> sections, List<NoteSessionLink> sessions) {
+            List<NoteSectionLink> sections, List<NoteSessionLink> sessions,
+            List<NoteSourceLink> sources) {
         return new NoteLinksDto(
                 projects.stream().map(ProjectLink::of).toList(),
                 sections.stream().map(SectionLink::of).toList(),
-                sessions.stream().map(SessionLink::of).toList());
+                sessions.stream().map(SessionLink::of).toList(),
+                sources.stream().map(SourceLink::of).toList());
     }
 }

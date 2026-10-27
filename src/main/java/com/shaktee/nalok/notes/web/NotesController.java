@@ -118,7 +118,8 @@ public class NotesController {
     public NoteLinksDto links(@PathVariable UUID id) {
         return NoteLinksDto.of(noteLinkService.listProjectLinks(id),
                 noteLinkService.listSectionLinks(id),
-                noteLinkService.listSessionLinks(id));
+                noteLinkService.listSessionLinks(id),
+                noteLinkService.listSourceLinks(id));
     }
 
     /**
@@ -146,6 +147,13 @@ public class NotesController {
         return links(id);
     }
 
+    @PostMapping("/{id}/links/sources/{sourceId}")
+    public NoteLinksDto linkSource(@PathVariable UUID id,
+            @PathVariable UUID sourceId) {
+        noteLinkService.linkToSource(id, sourceId);
+        return links(id);
+    }
+
     @DeleteMapping("/{id}/links/projects/{projectId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void unlinkProject(@PathVariable UUID id, @PathVariable UUID projectId) {
@@ -162,6 +170,12 @@ public class NotesController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void unlinkSession(@PathVariable UUID id, @PathVariable UUID sessionId) {
         noteLinkService.unlinkFromSession(id, sessionId);
+    }
+
+    @DeleteMapping("/{id}/links/sources/{sourceId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unlinkSource(@PathVariable UUID id, @PathVariable UUID sourceId) {
+        noteLinkService.unlinkFromSource(id, sourceId);
     }
 
     /**

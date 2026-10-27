@@ -1,8 +1,27 @@
 # Current task
 
-ID: N02 follow-up (review-correction pass) — COMPLETE pending user review
-State: feat/Notes worktree `/Users/satish/.local/share/opencode/worktree/notes`; backend 140/0 green; next: R01a Saved Sources backend (web-URL-only first slice recommended)
-Goal: Close the four audit gaps from the reported-complete N02: exact race-outcome proof, bounded context retrieval, projection-based revision pages, and lock-release probes.
+ID: R01a (Saved Sources backend, URL-only slice) — COMPLETE pending user review
+State: feat/Sources worktree `/Users/satish/.local/share/opencode/worktree/b96c9b/sources` (branched from feat/Notes 2955566); backend 156/0 green
+Goal: Save, read, version-edit, archive and associate web-URL sources. NO fetching, scraping or downloads in this slice.
+
+## R01a scope and what was done
+1. Package `com.shaktee.nalok.sources`. `SavedSource` (UUID, @Version, url + url_key, title≤200 required, optional description≤2000, reversible archive flag, createdAt/updatedAt). The URL is the record's identity: absolute http/https only, host required, no whitespace/control characters, ≤2048 chars, stored VERBATIM (never re-cased — `http://Example.com` and `http://example.com` are different records), immutable after creation (D13).
+2. Uniqueness via `url_key` = SHA-256 hex of the exact stored URL (`uk_saved_sources_url_key`), because a unique index over VARCHAR(2048) would exceed MySQL's utf8mb4 index-key limit. Duplicate URL → 409 conflict (IllegalStateException via the shared handler); the exists-check covers the common case and the DB constraint closes the two-simultaneous-creates race (loser's INSERT translated to the same 409).
+3. `SavedSourceService` (one class, transaction boundary owner): version-checked edits (expectedVersion mismatch → ObjectOptimisticLockingFailureException → 409); UNCHANGED saves (title/description identical after normalization) do not move version or updatedAt — same semantics as notes; archive/restore reversible, not content changes. Bounded newest-first list pages (cap 100).
+4. Note↔source association follows the proven link pattern: `note_source_links` (FK both sides, unique (note_id, source_id), linkedAt = association time NOT authorship), attach idempotent under the SAME per-note named lock `nalok:note-links:{noteId}` (barrier race test proves exactly one row), unlink removes only the link row, unknown note/source → 404, new table's FKs enforced at DB level (raw-insert proof).
+5. REST: `SourcesController` /api/sources — POST (201), GET list (archived filter, page/size → PageEnvelope, summaries carry url but not description), GET/PUT /{id} (PUT takes title/description/expectedVersion; NO url field), POST /{id}/archive|restore, GET /{id}/notes + /{id}/notes/page. Notes side: `GET /api/notes/{id}/links` now includes a `sources` group; POST/DELETE /api/notes/{id}/links/sources/{sourceId}. NoteLinksDto shape is additive (new `sources` key).
+
+## Verification evidence (R01a)
+- Commands: `. dbenv && sh mvnw verify`, `git diff --check`.
+- Result: BUILD SUCCESS, Tests run: 156, Failures: 0, Errors: 0 (baseline 140; +16). Disposable nalok_opencode_test only (TestDatabaseGuard active).
+- Behavior proven: URL verbatim round trip incl. mixed case/port/query/hash; model URL boundaries (absolute, scheme, host, whitespace/control, 2048 cap exact); title/description caps; duplicate 409 incl. case-distinct URL allowed; unchanged edit no-op; stale version 409 with newer content intact; archive/restore + filters; API create→PUT→409→duplicate→400 validation→404; association both directions + unlink 204; source attach race serialized by the guard.
+- Two test-side bugs caught during verification (both mine, both test logic): asserted restore-after-archive should throw (it is the legitimate restore); asserted absolute list totals while the context DB is shared across the class (changed to relative membership). Product code needed no changes.
+
+## Previous state
+N02 + follow-up complete on feat/Notes (140/0 at 2955566). See STATUS for the audit trail.
+
+## Next task
+User decision: R01a review → push, then frontend Sources slice or N01d increment 2/3 continuation; later candidates: E01 activity timeline, URL fetching/reader (B01/R01 remainder).
 
 ## What this pass changed
 1. Race test rebuilt: both editors reload their note INSIDE the raced section, and the test asserts the exact outcome set — exactly one winner (Note) and exactly one `ObjectOptimisticLockingFailureException` (409); any other outcome fails. The stricter test exposed a genuine InnoDB deadlock (inserts flush before updates → opposite lock order on note row vs revision index). Fix (D12): `updateNote` takes the note row lock first (`NoteRepository.findByIdForUpdate`, SELECT ... FOR UPDATE), so the loser waits there and fails the version predicate cleanly.

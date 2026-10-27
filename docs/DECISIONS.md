@@ -124,6 +124,30 @@ expectedVersion check is a UX fast path, not the integrity mechanism.
   other worker outcome fails the test. Previously it only counted winners
   and swallowed every exception as a "loss".
 
+## D13 — Saved Sources store URL identity, verbatim and immutable (2026-10-26)
+- Context: R01a is the first slice of saved sources. Fetching/reading is a
+  LATER slice; the record must be meaningful without any network access.
+- Options for URL identity: (a) normalized/lowercased URLs with uniqueness
+  on the normalized form; (b) verbatim URLs with uniqueness on the exact
+  string; (c) no uniqueness at all.
+- Chosen: (b), enforced via `url_key` (SHA-256 hex of the exact stored URL)
+  because a unique index on VARCHAR(2048) exceeds MySQL's utf8mb4 key limit.
+  Verbatim is the only honest rule before a fetching slice can confirm that
+  two differently-written addresses name the same page. Case-different URLs
+  are therefore DISTINCT records — documented and tested.
+- Consequences: the URL never changes after creation (a wrong address is
+  corrected by saving the right one; edits touch title/description only).
+  Duplicate save answers 409 "already saved" via the shared conflict
+  mapping; a true create race loses on the DB constraint and is translated
+  to the same conflict. Later slices (fetching) may add canonical-URL
+  resolution as NEW columns, never by mutating stored history.
+- Note↔source links reuse the note-link architecture: FK link table in the
+  notes module, idempotent attach under the per-note named lock, unlink-safe.
+- Tests: model boundary suite; service suite (duplicate/conflict/no-op edit/
+  archive/URL round trip); API suite (409/400/404 contract, both-direction
+  association); barrier attach race → exactly one link row; raw-insert FK
+  proof for the new table.
+
 ## Open decisions
 - EntityReference target deletion policy (currently: no FK; existence validated at creation; dangling references possible after target deletion — documented limitation until a policy task).
 - Manual correction of recorded study duration.

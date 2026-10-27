@@ -27,11 +27,14 @@ import com.shaktee.nalok.knowledge.study.service.StudySessionService;
 import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteKind;
 import com.shaktee.nalok.notes.model.NoteProjectLink;
+import com.shaktee.nalok.notes.model.NoteSourceLink;
 import com.shaktee.nalok.notes.repository.NoteRevisionRepository;
 import com.shaktee.nalok.projects.model.Project;
 import com.shaktee.nalok.projects.model.ProjectSection;
 import com.shaktee.nalok.projects.service.ProjectSectionService;
 import com.shaktee.nalok.projects.service.ProjectService;
+import com.shaktee.nalok.sources.model.SavedSource;
+import com.shaktee.nalok.sources.service.SavedSourceService;
 import com.shaktee.nalok.web.NotFoundException;
 
 /**
@@ -60,6 +63,9 @@ class NoteLinkServiceIntegrationTest {
 
     @Autowired
     private StudySessionService studySessionService;
+
+    @Autowired
+    private SavedSourceService sourceService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -236,6 +242,84 @@ class NoteLinkServiceIntegrationTest {
         assertThat(forSection.getTotalElements()).isEqualTo(1);
         assertThat(forSection.getContent()).extracting(Note::getId)
                 .containsExactly(second.getId());
+    }
+
+    @Test
+    void sourceLinksBehaveLikeTheOtherLinkTables() {
+        Note note = noteService.createNote("From a source", "Body", NoteKind.NOTE);
+        SavedSource source = sourceService.createSource(
+                "Spec", "https://spec.test/rules", "why it matters");
+
+        // Idempotent attach: same row, original linkedAt.
+        var first = noteLinkService.linkToSource(note.getId(), source.getId());
+        var second = noteLinkService.linkToSource(note.getId(), source.getId());
+        assertThat(second.getId()).isEqualTo(first.getId());
+        assertThat(second.getLinkedAt()).isEqualTo(first.getLinkedAt());
+        assertThat(noteLinkService.listSourceLinks(note.getId())).hasSize(1);
+
+        // The link row does not affect the note or the source.
+        assertThat(noteService.getNote(note.getId()).getBody()).isEqualTo("Body");
+        assertThat(sourceService.getSource(source.getId()).getVersion())
+                .isEqualTo(source.getVersion());
+
+        // Both directions retrieve.
+        assertThat(noteLinkService.listNotesForSource(source.getId()))
+                .extracting(Note::getId).containsExactly(note.getId());
+        Page<Note> paged = noteLinkService.listNotesForSourcePage(
+                source.getId(), 0, 10);
+        assertThat(paged.getTotalElements()).isEqualTo(1);
+
+        // Unlink removes only the link row.
+        noteLinkService.unlinkFromSource(note.getId(), source.getId());
+        assertThat(noteLinkService.listSourceLinks(note.getId())).isEmpty();
+        assertThat(noteLinkService.listNotesForSource(source.getId())).isEmpty();
+        assertThat(noteService.getNote(note.getId()).getBody()).isEqualTo("Body");
+        assertThat(sourceService.getSource(source.getId())).isNotNull();
+
+        // Unknown note/source are rejected up front.
+        assertThatThrownBy(() -> noteLinkService.linkToSource(
+                UUID.randomUUID(), source.getId()))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> noteLinkService.linkToSource(
+                note.getId(), UUID.randomUUID()))
+                .isInstanceOf(NotFoundException.class);
+
+        // The new table's FKs are enforced by the database itself.
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "INSERT INTO note_source_links (id, note_id, source_id, linked_at) "
+                        + "VALUES (UUID_TO_BIN(UUID()), UUID_TO_BIN(?), "
+                        + "UUID_TO_BIN(?), UTC_TIMESTAMP(6))",
+                UUID.randomUUID().toString(), source.getId().toString()))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void simultaneousSourceAttachesSerializeAndProduceExactlyOneLink() throws Exception {
+        Note note = noteService.createNote("Concurrent source attach", "Body", NoteKind.NOTE);
+        SavedSource source = sourceService.createSource(
+                "Race source", "https://race.test/one", null);
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Future<NoteSourceLink>> results;
+        try {
+            results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    barrier.await(5, TimeUnit.SECONDS);
+                    return noteLinkService.linkToSource(note.getId(), source.getId());
+                }));
+            }
+            // Collect while the pool is still alive.
+            results.get(0).get(10, TimeUnit.SECONDS);
+            results.get(1).get(10, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(noteLinkService.listSourceLinks(note.getId()))
+                .as("the per-note guard must reduce the race to one link row")
+                .hasSize(1);
     }
 
     @Test

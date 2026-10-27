@@ -24,12 +24,15 @@ import com.shaktee.nalok.notes.model.Note;
 import com.shaktee.nalok.notes.model.NoteProjectLink;
 import com.shaktee.nalok.notes.model.NoteSectionLink;
 import com.shaktee.nalok.notes.model.NoteSessionLink;
+import com.shaktee.nalok.notes.model.NoteSourceLink;
 import com.shaktee.nalok.notes.repository.NoteProjectLinkRepository;
 import com.shaktee.nalok.notes.repository.NoteRepository;
 import com.shaktee.nalok.notes.repository.NoteSectionLinkRepository;
 import com.shaktee.nalok.notes.repository.NoteSessionLinkRepository;
+import com.shaktee.nalok.notes.repository.NoteSourceLinkRepository;
 import com.shaktee.nalok.projects.service.ProjectSectionService;
 import com.shaktee.nalok.projects.service.ProjectService;
+import com.shaktee.nalok.sources.service.SavedSourceService;
 import com.shaktee.nalok.web.NotFoundException;
 
 /**
@@ -58,9 +61,11 @@ public class NoteLinkService {
     private final NoteProjectLinkRepository projectLinkRepository;
     private final NoteSectionLinkRepository sectionLinkRepository;
     private final NoteSessionLinkRepository sessionLinkRepository;
+    private final NoteSourceLinkRepository sourceLinkRepository;
     private final ProjectService projectService;
     private final ProjectSectionService projectSectionService;
     private final StudySessionService studySessionService;
+    private final SavedSourceService sourceService;
     private final Clock clock;
     private final JdbcTemplate jdbcTemplate;
 
@@ -68,18 +73,22 @@ public class NoteLinkService {
             NoteProjectLinkRepository projectLinkRepository,
             NoteSectionLinkRepository sectionLinkRepository,
             NoteSessionLinkRepository sessionLinkRepository,
+            NoteSourceLinkRepository sourceLinkRepository,
             ProjectService projectService,
             ProjectSectionService projectSectionService,
             StudySessionService studySessionService,
+            SavedSourceService sourceService,
             Clock clock,
             JdbcTemplate jdbcTemplate) {
         this.noteRepository = noteRepository;
         this.projectLinkRepository = projectLinkRepository;
         this.sectionLinkRepository = sectionLinkRepository;
         this.sessionLinkRepository = sessionLinkRepository;
+        this.sourceLinkRepository = sourceLinkRepository;
         this.projectService = projectService;
         this.projectSectionService = projectSectionService;
         this.studySessionService = studySessionService;
+        this.sourceService = sourceService;
         this.clock = clock;
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -135,6 +144,23 @@ public class NoteLinkService {
     }
 
     @Transactional
+    public NoteSourceLink linkToSource(UUID noteId, UUID sourceId) {
+        acquireLinkGuard(noteId);
+        releaseGuardAfterTransactionEnds(noteId);
+        Note note = findNote(noteId);
+        requireSource(sourceId);
+        NoteSourceLink existing =
+                sourceLinkRepository.findByNote_IdAndSource_Id(noteId, sourceId)
+                        .orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+        return sourceLinkRepository.save(
+                new NoteSourceLink(note, sourceService.getSource(sourceId),
+                        clock.instant()));
+    }
+
+    @Transactional
     public void unlinkFromProject(UUID noteId, UUID projectId) {
         findNote(noteId);
         projectLinkRepository.findByNote_IdAndProject_Id(noteId, projectId)
@@ -155,6 +181,13 @@ public class NoteLinkService {
                 .ifPresent(sessionLinkRepository::delete);
     }
 
+    @Transactional
+    public void unlinkFromSource(UUID noteId, UUID sourceId) {
+        findNote(noteId);
+        sourceLinkRepository.findByNote_IdAndSource_Id(noteId, sourceId)
+                .ifPresent(sourceLinkRepository::delete);
+    }
+
     public List<NoteProjectLink> listProjectLinks(UUID noteId) {
         findNote(noteId);
         return projectLinkRepository.findByNote_IdOrderByLinkedAtAsc(noteId);
@@ -168,6 +201,11 @@ public class NoteLinkService {
     public List<NoteSessionLink> listSessionLinks(UUID noteId) {
         findNote(noteId);
         return sessionLinkRepository.findByNote_IdOrderByLinkedAtAsc(noteId);
+    }
+
+    public List<NoteSourceLink> listSourceLinks(UUID noteId) {
+        findNote(noteId);
+        return sourceLinkRepository.findByNote_IdOrderByLinkedAtAsc(noteId);
     }
 
     /**
@@ -217,6 +255,18 @@ public class NoteLinkService {
     public Page<Note> listNotesForSessionPage(UUID sessionId, int page, int size) {
         studySessionService.getSession(sessionId);
         return sessionLinkRepository.findNotesForSession(sessionId, pageRequest(page, size));
+    }
+
+    public List<Note> listNotesForSource(UUID sourceId) {
+        requireSource(sourceId);
+        return newestFirst(sourceLinkRepository
+                .findBySource_IdOrderByLinkedAtAsc(sourceId)
+                .stream().map(NoteSourceLink::getNote).toList());
+    }
+
+    public Page<Note> listNotesForSourcePage(UUID sourceId, int page, int size) {
+        requireSource(sourceId);
+        return sourceLinkRepository.findNotesForSource(sourceId, pageRequest(page, size));
     }
 
     private PageRequest pageRequest(int page, int size) {
@@ -274,6 +324,12 @@ public class NoteLinkService {
     private void requireSection(UUID sectionId) {
         if (!projectSectionService.sectionExists(sectionId)) {
             throw new NotFoundException("Project section not found: " + sectionId);
+        }
+    }
+
+    private void requireSource(UUID sourceId) {
+        if (!sourceService.sourceExists(sourceId)) {
+            throw new NotFoundException("Source not found: " + sourceId);
         }
     }
 

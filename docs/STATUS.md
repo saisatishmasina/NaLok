@@ -1,5 +1,16 @@
 # Status — audited 2026-10-26
 
+## R01a Saved Sources (feat/Sources, 2026-10-26)
+- URL-only first slice implemented: `com.shaktee.nalok.sources` (SavedSource
+  model with in-model URL validation, SHA-256 `url_key` unique identity,
+  version-checked edits, reversible archive, bounded lists; note_source_links
+  with DB-enforced FKs under the existing per-note guard; /api/sources REST +
+  note↔source link endpoints). NO fetching/scraping/downloads.
+- Verification: `sh mvnw verify` → BUILD SUCCESS, Tests run: 156, Failures: 0,
+  Errors: 0 (feat/Notes baseline 140). `git diff --check` clean.
+- D13 records the identity rules: URL immutable, verbatim (no case
+  normalization), duplicate = 409, case-different URLs = distinct records.
+
 ## N02 follow-up correction pass (feat/Notes, 2026-10-26)
 - Audit of the reported-complete N02 found four real gaps; all closed:
   (1) the concurrent-edit test did not actually prove the loser receives a
