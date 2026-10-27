@@ -62,11 +62,21 @@ export interface Project {
   status: ProjectStatus
   createdAt: string
   completedAt: string | null
+  /**
+   * Concurrent-edit guard: the edit form sends this back; a mismatched
+   * version is a 409 instead of a silent overwrite of newer work.
+   */
+  version: number
 }
 
 export interface ProjectSection {
   id: string
+  projectId: string
   title: string
+  description: string | null
+  position: number
+  /** Same concurrent-edit guard as Project (see above). */
+  version: number
 }
 
 export interface ProjectSummary {

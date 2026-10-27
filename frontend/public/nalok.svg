@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <title>NaLok — a world you can return to</title>
+  <rect width="256" height="256" rx="58" fill="#180426"/>
+
+  <!-- Your world: open, but with a reassuring boundary. -->
+  <path d="M190 63 A90 90 0 1 0 215 151"
+        stroke="#B4AEE8" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- A clear, continuous path; a quiet lowercase n. -->
+  <path d="M88 168 V119 C88 74 168 74 168 119 V168"
+        stroke="#FFE3FE" stroke-width="17" stroke-linecap="round"/>
+
+  <!-- Your saved place. -->
+  <circle cx="168" cy="168" r="11" fill="#F2D6A2"/>
+</svg>

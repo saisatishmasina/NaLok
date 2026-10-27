@@ -7,9 +7,11 @@ import { useState } from 'react'
 import type { ReactNode, PropsWithChildren } from 'react'
 
 export default function HomePage() {
-  const projects = useResource(fetchProjectSummary, [])
-  const current = useResource(fetchCurrentStudySession, [])
-  const summary = useResource(() => fetchWeeklySummary(browserZone()), [])
+  // Polling keeps the dashboard fresh without reloads (D10-era F05 scope):
+  // a failed poll keeps the last real data instead of blanking the card.
+  const projects = useResource(fetchProjectSummary, [], 30_000)
+  const current = useResource(fetchCurrentStudySession, [], 10_000)
+  const summary = useResource(() => fetchWeeklySummary(browserZone()), [], 30_000)
 
   return (
     <div className="page">
@@ -52,7 +54,7 @@ function ActiveProjectsCard({
   render: (summary: ProjectSummary) => ReactNode
 }) {
   return (
-    <DashboardCard title="Active projects" accent="mint" icon={<TargetIcon />}>
+    <DashboardCard title="Active projects" accent="violet" icon={<TargetIcon />}>
       <CardBody state={state} render={render} />
     </DashboardCard>
   )
@@ -66,7 +68,7 @@ function CurrentStudyCard({ state }: { state: ResourceProps<StudySession | null>
   const liveSeconds = useLiveStudySeconds(state.data)
 
   return (
-    <DashboardCard title="Current study" accent="orange" icon={<TimerIcon />}>
+    <DashboardCard title="Current study" accent="blush" icon={<TimerIcon />}>
       <CardBody
         state={state}
         render={(session) =>
@@ -99,7 +101,7 @@ function CurrentStudyCard({ state }: { state: ResourceProps<StudySession | null>
 
 function WeekFocusCard({ state }: { state: ResourceProps<StudyWeeklySummary> }) {
   return (
-    <DashboardCard title="This week's focus" accent="yellow" icon={<PulseIcon />}>
+    <DashboardCard title="This week's focus" accent="lavender" icon={<PulseIcon />}>
       <CardBody
         state={state}
         render={(summary) => (
@@ -169,15 +171,26 @@ function CardBody<T>({
   state: ResourceProps<T>
   render: (data: T) => ReactNode
 }>) {
-  if (state.error !== null) {
-    return <ErrorNote error={state.error} />
-  }
-  if (state.loading) {
+  // A failed refresh keeps the last real data VISIBLE under a stale banner —
+  // hiding honest data because a poll errored would be worse than showing it.
+  if (state.loading && state.data === null) {
     return <Waiting />
   }
-  // data === null is a legitimate VALUE for nullable endpoints (e.g. the
-  // 204 "no current session") — the renderer below owns that case.
-  return render(state.data as T)
+  if (state.error !== null && state.data === null) {
+    return <ErrorNote error={state.error} />
+  }
+  return (
+    <>
+      {state.error !== null && (
+        <div className="stale-note" role="status">
+          Last refresh failed — showing previous data: {state.error}
+        </div>
+      )}
+      {/* data === null is a legitimate VALUE for nullable endpoints (e.g. the
+          204 "no current session") — the renderer below owns that case. */}
+      {render(state.data as T)}
+    </>
+  )
 }
 
 function Waiting() {

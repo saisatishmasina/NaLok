@@ -17,7 +17,8 @@ public record ProjectDto(
         String description,
         String status,
         Instant createdAt,
-        Instant completedAt) {
+        Instant completedAt,
+        long version) {
 
     public static final String ACTIVE_API_NAME = "ACTIVE";
 
@@ -28,7 +29,8 @@ public record ProjectDto(
                 project.getDescription(),
                 apiStatus(project.getStatus()),
                 project.getCreatedAt(),
-                project.getCompletedAt());
+                project.getCompletedAt(),
+                project.getVersion());
     }
 
     private static String apiStatus(ProjectStatus status) {

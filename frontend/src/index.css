@@ -5,19 +5,19 @@
  */
 :root {
   /* Brand palette */
-  --color-mint: #16c47f;
-  --color-yellow: #ffd65a;
-  --color-orange: #ff9d23;
-  --color-red: #f93827;
+  --color-deep: #440a67;      /* canvas shade + darkest fills */
+  --color-violet: #93329e;    /* primary accent (fills, glows) */
+  --color-lavender: #b4aee8;  /* secondary accent */
+  --color-blush: #ffe3fe;     /* highlight / bright text accent */
 
   /* Derived tints (for glows, chips, tick marks) */
-  --color-mint-soft: rgba(22, 196, 127, 0.16);
-  --color-yellow-soft: rgba(255, 214, 90, 0.16);
-  --color-orange-soft: rgba(255, 157, 35, 0.16);
-  --color-red-soft: rgba(249, 56, 39, 0.16);
+  --color-violet-soft: rgba(147, 50, 158, 0.22);
+  --color-lavender-soft: rgba(180, 174, 232, 0.16);
+  --color-blush-soft: rgba(255, 227, 254, 0.18);
+  --color-deep-soft: rgba(67, 10, 103, 0.45);
 
   /* Canvas + glass system */
-  --canvas: #0c1211;
+  --canvas: #180426;
   --glass-fill: rgba(255, 255, 255, 0.06);
   --glass-fill-strong: rgba(255, 255, 255, 0.1);
   --glass-stroke: rgba(255, 255, 255, 0.12);
@@ -85,7 +85,7 @@ body {
   height: 46vmax;
   top: -18vmax;
   left: -10vmax;
-  background: radial-gradient(circle, rgba(22, 196, 127, 0.5), transparent 65%);
+  background: radial-gradient(circle, rgba(147, 50, 158, 0.5), transparent 65%);
 }
 
 .ambient::after {
@@ -93,17 +93,19 @@ body {
   height: 40vmax;
   bottom: -16vmax;
   right: -8vmax;
-  background: radial-gradient(circle, rgba(255, 157, 35, 0.4), transparent 65%);
+  background: radial-gradient(circle, rgba(255, 227, 254, 0.4), transparent 65%);
 }
 
+/* Full-bleed two-column shell: the sidebar is NOT a floating card — it runs
+   edge-to-edge from the top-left corner so nav and page read as one surface. */
 .app-shell {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 248px 1fr;
-  gap: 20px;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 0;
   height: 100vh;
-  padding: 20px;
+  padding: 0;
 }
 
 /* ---------- Sidebar ---------- */
@@ -111,39 +113,42 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 22px 14px;
-  border-radius: var(--radius-shell);
-  background: var(--glass-fill);
-  border: 1px solid var(--glass-stroke);
-  box-shadow: var(--shadow-card);
+  padding: 26px 18px 20px;
+  border-radius: 0;
+  /* A deep-to-transparent vertical tint over the canvas + ambient glow:
+     blends the rail into the page corner instead of boxing it. */
+  background: linear-gradient(
+    180deg,
+    rgba(67, 10, 103, 0.55),
+    rgba(24, 4, 38, 0.28) 42%,
+    rgba(24, 4, 38, 0)
+  );
+  border-right: 1px solid var(--glass-stroke);
   -webkit-backdrop-filter: var(--blur-backdrop);
   backdrop-filter: var(--blur-backdrop);
 }
 
+/* Brand anchors the very top-left of the page, above the Spaces group. */
 .sidebar .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 10px 20px;
+  padding: 2px 10px 0;
+  margin-bottom: 26px;
 }
 
 .sidebar .brand-mark {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  background: linear-gradient(
-    135deg,
-    var(--color-mint),
-    var(--color-yellow) 60%,
-    var(--color-orange)
-  );
-  box-shadow: 0 0 14px rgba(22, 196, 127, 0.55);
+  display: block;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
 }
 
 .sidebar .brand-name {
   font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
 }
 
 .sidebar .section-label {
@@ -175,10 +180,10 @@ body {
 
 .sidebar a.nav-item.active {
   background: var(--glass-fill-strong);
-  color: var(--color-mint);
+  color: var(--color-blush);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.1) inset,
-    0 4px 14px rgba(22, 196, 127, 0.12);
+    0 4px 14px rgba(147, 50, 158, 0.12);
 }
 
 .sidebar a.nav-item svg {
@@ -191,7 +196,7 @@ body {
 .content {
   min-width: 0;
   overflow-y: auto;
-  padding: 8px 8px 32px;
+  padding: 30px 38px 44px;
   scrollbar-width: thin;
 }
 
@@ -257,24 +262,24 @@ body {
   opacity: 0.9;
 }
 
-.accent-mint::before {
-  background: linear-gradient(90deg, var(--color-mint), transparent);
-  box-shadow: 0 0 18px rgba(22, 196, 127, 0.5);
+.accent-violet::before {
+  background: linear-gradient(90deg, var(--color-violet), transparent);
+  box-shadow: 0 0 18px rgba(147, 50, 158, 0.5);
 }
 
-.accent-yellow::before {
-  background: linear-gradient(90deg, var(--color-yellow), transparent);
-  box-shadow: 0 0 18px rgba(255, 214, 90, 0.45);
+.accent-lavender::before {
+  background: linear-gradient(90deg, var(--color-lavender), transparent);
+  box-shadow: 0 0 18px rgba(180, 174, 232, 0.45);
 }
 
-.accent-orange::before {
-  background: linear-gradient(90deg, var(--color-orange), transparent);
-  box-shadow: 0 0 18px rgba(255, 157, 35, 0.45);
+.accent-blush::before {
+  background: linear-gradient(90deg, var(--color-blush), transparent);
+  box-shadow: 0 0 18px rgba(255, 227, 254, 0.45);
 }
 
-.accent-red::before {
-  background: linear-gradient(90deg, var(--color-red), transparent);
-  box-shadow: 0 0 18px rgba(249, 56, 39, 0.45);
+.accent-deep::before {
+  background: linear-gradient(90deg, var(--color-deep), var(--color-lavender) 70%, transparent);
+  box-shadow: 0 0 18px rgba(180, 174, 232, 0.3);
 }
 
 .card-header {
@@ -306,24 +311,24 @@ body {
   height: 18px;
 }
 
-.accent-mint .card-icon {
-  color: var(--color-mint);
-  background: var(--color-mint-soft);
+.accent-violet .card-icon {
+  color: var(--color-blush);
+  background: var(--color-violet-soft);
 }
 
-.accent-yellow .card-icon {
-  color: var(--color-yellow);
-  background: var(--color-yellow-soft);
+.accent-lavender .card-icon {
+  color: var(--color-lavender);
+  background: var(--color-lavender-soft);
 }
 
-.accent-orange .card-icon {
-  color: var(--color-orange);
-  background: var(--color-orange-soft);
+.accent-blush .card-icon {
+  color: var(--color-blush);
+  background: var(--color-blush-soft);
 }
 
-.accent-red .card-icon {
-  color: var(--color-red);
-  background: var(--color-red-soft);
+.accent-deep .card-icon {
+  color: var(--color-blush);
+  background: var(--color-deep-soft);
 }
 
 .card-body {
@@ -363,8 +368,8 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-orange);
-  box-shadow: 0 0 10px rgba(255, 157, 35, 0.8);
+  background: var(--color-blush);
+  box-shadow: 0 0 10px rgba(255, 227, 254, 0.8);
   animation: pulse 1.6s ease-in-out infinite;
 }
 
@@ -386,8 +391,8 @@ body {
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 999px;
-  background: var(--color-mint-soft);
-  color: var(--color-mint);
+  background: var(--color-violet-soft);
+  color: var(--color-blush);
 }
 
 .chip.muted {
@@ -415,8 +420,8 @@ body {
   width: 100%;
   min-height: 4px;
   border-radius: 6px 6px 3px 3px;
-  background: linear-gradient(180deg, var(--color-yellow), rgba(255, 214, 90, 0.35));
-  box-shadow: 0 0 12px rgba(255, 214, 90, 0.25);
+  background: linear-gradient(180deg, var(--color-lavender), rgba(180, 174, 232, 0.35));
+  box-shadow: 0 0 12px rgba(180, 174, 232, 0.25);
   align-self: flex-end;
   transition: height 300ms ease;
 }
@@ -462,14 +467,25 @@ body {
   margin: 6px 0;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--color-red-soft);
+  background: var(--color-deep-soft);
   color: #ffb4ad;
   font-size: 13px;
-  border: 1px solid rgba(249, 56, 39, 0.35);
+  border: 1px solid rgba(147, 50, 158, 0.35);
 }
 
 .error-note.page-level {
   max-width: 720px;
+}
+
+/* Refresh failure WITH retained data: slimmer, status-toned, keeps content. */
+.stale-note {
+  margin: 0 0 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--color-deep-soft);
+  color: #ffb4ad;
+  font-size: 12px;
+  border: 1px solid rgba(147, 50, 158, 0.35);
 }
 
 .loading-note,
@@ -505,9 +521,9 @@ body {
 }
 
 .filter-chip.active {
-  background: var(--color-mint-soft);
-  border-color: rgba(22, 196, 127, 0.5);
-  color: var(--color-mint);
+  background: var(--color-violet-soft);
+  border-color: rgba(147, 50, 158, 0.5);
+  color: var(--color-blush);
 }
 
 .project-grid {
@@ -534,7 +550,7 @@ body {
 
 .project-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(22, 196, 127, 0.45);
+  border-color: rgba(147, 50, 158, 0.45);
 }
 
 .project-title {
@@ -578,23 +594,23 @@ body {
 }
 
 .status-active {
-  background: var(--color-mint-soft);
-  color: var(--color-mint);
+  background: var(--color-violet-soft);
+  color: var(--color-blush);
 }
 
 .status-paused {
-  background: var(--color-yellow-soft);
-  color: var(--color-yellow);
+  background: var(--color-lavender-soft);
+  color: var(--color-lavender);
 }
 
 .status-completed {
-  background: var(--color-orange-soft);
-  color: var(--color-orange);
+  background: var(--color-blush-soft);
+  color: var(--color-blush);
 }
 
 .status-archived {
-  background: var(--color-red-soft);
-  color: #ff9d90;
+  background: var(--color-deep-soft);
+  color: var(--text-secondary);
 }
 
 .detail-meta {
@@ -626,11 +642,91 @@ body {
 }
 
 .section-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 14px;
   border-radius: 12px;
   background: var(--glass-fill-strong);
   border: 1px solid var(--glass-stroke);
   font-size: 14px;
+}
+
+.section-item.editing {
+  display: block;
+}
+
+/* F08: mini action group inside a section row (Open + Edit). */
+.section-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* F08: section workbench pipers/steppers and the "open section" marker. */
+.stepper-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.section-item.current {
+  border-color: var(--color-violet);
+  background: var(--color-deep-soft);
+}
+
+
+.section-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  font-weight: 600;
+}
+
+.section-desc {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  min-width: 0;
+}
+
+/* ---------- F07: project lifecycle + sections ---------- */
+
+.lifecycle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 6px 14px;
+}
+
+/* Archive is terminal: once armed, the button turns into a hot confirm. */
+.action-btn.danger {
+  background: rgba(147, 50, 158, 0.4);
+  border-color: rgba(255, 227, 254, 0.55);
+  color: var(--color-blush);
+  text-shadow: 0 0 18px rgba(147, 50, 158, 0.5);
+}
+
+.sections-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.section-add-form {
+  margin-top: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--glass-fill-strong);
+  border: 1px solid var(--glass-stroke);
 }
 
 .back-link {
@@ -684,8 +780,8 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  color: var(--color-mint);
-  text-shadow: 0 0 26px rgba(22, 196, 127, 0.35);
+  color: var(--color-blush);
+  text-shadow: 0 0 26px rgba(147, 50, 158, 0.35);
 }
 
 .focus-actions {
@@ -707,8 +803,16 @@ body {
   transition: background 140ms ease, border-color 140ms ease;
 }
 
+/* F08: "Study this" is a react-router Link styled like an action button —
+   anchors need display + no underline to match the native buttons. */
+a.action-btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .action-btn:hover:not(:disabled) {
-  border-color: rgba(22, 196, 127, 0.5);
+  border-color: rgba(147, 50, 158, 0.5);
 }
 
 .action-btn:disabled {
@@ -717,15 +821,15 @@ body {
 }
 
 .action-btn.primary {
-  background: var(--color-mint-soft);
-  border-color: rgba(22, 196, 127, 0.5);
-  color: var(--color-mint);
+  background: var(--color-violet-soft);
+  border-color: rgba(147, 50, 158, 0.5);
+  color: var(--color-blush);
 }
 
 .action-btn.finish {
-  background: var(--color-orange-soft);
-  border-color: rgba(255, 157, 35, 0.45);
-  color: var(--color-orange);
+  background: var(--color-blush-soft);
+  border-color: rgba(255, 227, 254, 0.45);
+  color: var(--color-blush);
 }
 
 .status-dot {
@@ -738,16 +842,16 @@ body {
 
 .status-dot.status-active,
 .status-dot.status-planned {
-  background: var(--color-mint);
-  box-shadow: 0 0 9px rgba(22, 196, 127, 0.7);
+  background: var(--color-violet);
+  box-shadow: 0 0 9px rgba(147, 50, 158, 0.7);
 }
 
 .status-dot.status-paused {
-  background: var(--color-yellow);
+  background: var(--color-lavender);
 }
 
 .status-dot.status-completed {
-  background: var(--color-orange);
+  background: var(--color-blush);
 }
 
 .history-list {
@@ -790,7 +894,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-mint);
+  color: var(--color-blush);
 }
 
 .history-side {
@@ -851,6 +955,142 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Study creation form (F05) ---------- */
+.create-panel {
+  margin-top: 18px;
+}
+
+.create-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 11px;
+  border: 1px solid var(--glass-stroke);
+  background: var(--glass-fill-strong);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 140ms ease;
+}
+
+.form-input:focus,
+.form-select:focus {
+  border-color: rgba(147, 50, 158, 0.6);
+}
+
+.form-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.form-select {
+  cursor: pointer;
+}
+
+/* Native dropdown rows on dark canvases render with the page background. */
+.form-select option {
+  background: #180426;
+  color: var(--text-primary);
+}
+
+.form-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.form-controls .form-select {
+  min-width: 0;
+}
+
+.form-controls .form-select:first-child {
+  flex: 0 0 180px;
+}
+
+.form-controls .form-select + .form-select {
+  flex: 1;
+}
+
+.create-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+/* Picker failure/scale note with inline retry */
+.picker-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -2px 0 0 100px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: var(--color-deep-soft);
+  color: #ffb4ad;
+  font-size: 12px;
+  border: 1px solid rgba(147, 50, 158, 0.35);
+}
+
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Project create/edit (F06) ---------- */
+.create-project {
+  margin: 0 0 6px;
+}
+
+.create-project-intro {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.create-project-panel,
+.edit-panel {
+  max-width: 720px;
+  padding: 18px 20px 16px;
+  margin: 8px 0 14px;
+}
+
+.success-note {
+  font-size: 13px;
+  color: var(--color-blush);
+}
+
+.head-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.page-foot-note {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  margin-top: 22px;
+}
+
 /* ---------- Narrow layout ---------- */
 @media (max-width: 980px) {
   .cards {
@@ -861,7 +1101,20 @@ body {
     grid-template-columns: 76px 1fr;
   }
 
-  .sidebar .brand-name,
+  .sidebar {
+    padding: 24px 10px 16px;
+  }
+
+  .sidebar .brand {
+    justify-content: center;
+    gap: 0;
+    padding: 2px 0 0;
+  }
+
+  .sidebar .brand-name {
+    display: none;
+  }
+
   .sidebar .section-label,
   .sidebar .nav-item {
     font-size: 0;

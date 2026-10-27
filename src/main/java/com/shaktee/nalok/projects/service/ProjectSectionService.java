@@ -12,6 +12,8 @@ import com.shaktee.nalok.projects.repository.ProjectSectionRepository;
 import com.shaktee.nalok.projects.model.Project;
 import com.shaktee.nalok.web.NotFoundException;
 
+import org.springframework.dao.OptimisticLockingFailureException;
+
 @Service
 @Transactional(readOnly = true)
 public class ProjectSectionService {
@@ -47,6 +49,49 @@ public class ProjectSectionService {
         Project project = findProject(projectId);
         ProjectSection section = new ProjectSection(project, title, description, position);
         return sectionRepository.save(section);
+    }
+
+    /**
+     * UI-friendly creation: the section is APPENDED after the current last
+     * position, so the caller never has to know about ordering internals.
+     *
+     * Concurrency: both reads are PESSIMISTIC — the project row lock
+     * serializes racing appends onto one project, and the locking section
+     * read then sees every committed section, so max(position)+1 cannot be
+     * computed twice for the same project. createSection(position) does NOT
+     * take this path and stays for internal/existing callers.
+     */
+    @Transactional
+    public ProjectSection appendSection(UUID projectId, String title, String description) {
+        Project project = projectRepository.findByIdForWrite(projectId)
+                .orElseThrow(() -> new NotFoundException(
+                        "Project not found: " + projectId));
+        List<ProjectSection> existing = sectionRepository.findByProjectIdForWrite(projectId);
+        int nextPosition = existing.stream()
+                .mapToInt(ProjectSection::getPosition)
+                .max()
+                .orElse(-1) + 1;
+        ProjectSection section = new ProjectSection(project, title, description, nextPosition);
+        return sectionRepository.save(section);
+    }
+
+    /**
+     * Rename AND description land in ONE transaction, mirroring the project
+     * edit: a section edit is a single intent. The caller carries the
+     * snapshot's version; a mismatched version means somebody else edited
+     * first — reject rather than overwrite newer work.
+     */
+    @Transactional
+    public ProjectSection updateSection(UUID sectionId, long expectedVersion, String title,
+            String description) {
+        ProjectSection section = findSection(sectionId);
+        if (section.getVersion() != expectedVersion) {
+            throw new OptimisticLockingFailureException(
+                    "The record changed concurrently; reload and try again");
+        }
+        section.rename(title);
+        section.updateDescription(description);
+        return section;
     }
 
     @Transactional

@@ -1,8 +1,8 @@
 package com.shaktee.nalok.web;
 
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -100,8 +100,14 @@ public class ApiExceptionHandler {
         return problem;
     }
 
-    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    ProblemDetail optimisticLockConflict(ObjectOptimisticLockingFailureException exception) {
+    /**
+     * Stale writes: an edit submitted against an old version (or a row that
+     * changed mid-flight under Hibernate) must not overwrite newer work.
+     * The parent OptimisticLockingFailureException covers both the explicit
+     * version check in services and ORM-detected staleness in one mapping.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    ProblemDetail optimisticLockConflict(OptimisticLockingFailureException exception) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
                 "The record changed concurrently; reload and try again");
         problem.setTitle("Concurrent update");

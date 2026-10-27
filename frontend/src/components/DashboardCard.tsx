@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-export type CardAccent = 'mint' | 'yellow' | 'orange' | 'red'
+export type CardAccent = 'violet' | 'lavender' | 'blush' | 'deep'
 
 interface DashboardCardProps {
   title: string

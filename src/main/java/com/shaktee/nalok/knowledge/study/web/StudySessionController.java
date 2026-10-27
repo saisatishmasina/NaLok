@@ -28,6 +28,7 @@ import com.shaktee.nalok.knowledge.study.service.StudySessionService;
 import com.shaktee.nalok.knowledge.study.service.StudyWeeklySummary;
 import com.shaktee.nalok.web.PageEnvelope;
 import com.shaktee.nalok.world.reference.EntityReference;
+import com.shaktee.nalok.world.reference.EntityType;
 
 /**
  * Thin web layer over the study application operations. It owns HTTP
@@ -72,6 +73,25 @@ public class StudySessionController {
                 .toList();
         return PageEnvelope.of(content, history.getNumber(), history.getSize(),
                 history.getTotalElements(), history.getTotalPages());
+    }
+
+    /**
+     * Sessions whose context references ONE target (F08 section workbench).
+     * Both query params are required together — an incomplete pair is a bad
+     * request, keeping the EntityReference both-or-neither rule at the URL.
+     */
+    @GetMapping("/sessions/by-context")
+    public PageEnvelope<StudySessionDto> listByContext(
+            @RequestParam EntityType entityType,
+            @RequestParam UUID referenceId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        var sessions = studySessionService.listSessionsByContext(entityType, referenceId, page, size);
+        List<StudySessionDto> content = sessions.getContent().stream()
+                .map(this::toDto)
+                .toList();
+        return PageEnvelope.of(content, sessions.getNumber(), sessions.getSize(),
+                sessions.getTotalElements(), sessions.getTotalPages());
     }
 
     /**

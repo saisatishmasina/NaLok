@@ -5,13 +5,24 @@ import java.util.UUID;
 
 import com.shaktee.nalok.projects.model.ProjectSection;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ProjectSectionRepository extends JpaRepository<ProjectSection, UUID> {
 
     List<ProjectSection> findByProject_IdOrderByPositionAsc(UUID projectId);
+
+    /**
+     * Locking read for the append path: a FOR UPDATE read always sees the
+     * LATEST committed rows (never a stale repeatable-read snapshot), which
+     * is what makes max(position)+1 safe under concurrency.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from ProjectSection s where s.project.id = :projectId")
+    List<ProjectSection> findByProjectIdForWrite(@Param("projectId") UUID projectId);
 
     /**
      * Sections with their owning project joined eagerly, so a read-only

@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 
 @Getter
@@ -22,6 +23,15 @@ public class ProjectSection {
     @Id
     @Column(nullable = false, updatable = false)
     private UUID id;
+
+    /**
+     * Concurrent-edit protection: a stale UI form that re-submits an edit
+     * based on an older snapshot is rejected rather than overwrite newer
+     * work (mirrors Project's boundary contract).
+     */
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "project_id", nullable = false, updatable = false)

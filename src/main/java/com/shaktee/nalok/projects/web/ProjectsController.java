@@ -6,10 +6,15 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestMapping;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 
 import com.shaktee.nalok.projects.model.ProjectStatus;
 import com.shaktee.nalok.projects.repository.ProjectRepository;
@@ -18,8 +23,9 @@ import com.shaktee.nalok.projects.service.ProjectService;
 import com.shaktee.nalok.web.PageEnvelope;
 
 /**
- * Read-only Projects API for the first frontend slice. Write operations land
- * when the Projects UI needs them; controllers stay thin wrappers.
+ * Projects API. Read endpoints landed first; project create/edit write
+ * operations ride on the validated service contract. Lifecycle transitions
+ * (start/pause/complete/archive) arrive as their own endpoint actions.
  */
 @RestController
 @RequestMapping("/api/projects")
@@ -36,6 +42,66 @@ public class ProjectsController {
         this.projectService = projectService;
         this.projectSectionService = projectSectionService;
         this.projectRepository = projectRepository;
+    }
+
+    /** POST → 201 Created with the persisted PLANNED project. */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProjectDto create(@Valid @RequestBody CreateProjectRequest request) {
+        return ProjectDto.of(projectService.createProject(request.title(), request.description()));
+    }
+
+    /** PUT → 200 with the updated project (stale snapshot version → 409). */
+    @PutMapping("/{id}")
+    public ProjectDto update(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateProjectRequest request) {
+        return ProjectDto.of(projectService.updateProject(
+                id, request.version(), request.title(), request.description()));
+    }
+
+    // ---------- F07: lifecycle transitions ----------
+
+    /** Each transition follows the model's own state rules; violations → 409. */
+    @PostMapping("/{id}/start")
+    public ProjectDto start(@PathVariable UUID id) {
+        return ProjectDto.of(projectService.startProject(id));
+    }
+
+    @PostMapping("/{id}/pause")
+    public ProjectDto pause(@PathVariable UUID id) {
+        return ProjectDto.of(projectService.pauseProject(id));
+    }
+
+    @PostMapping("/{id}/complete")
+    public ProjectDto complete(@PathVariable UUID id) {
+        return ProjectDto.of(projectService.completeProject(id));
+    }
+
+    @PostMapping("/{id}/archive")
+    public ProjectDto archive(@PathVariable UUID id) {
+        return ProjectDto.of(projectService.archiveProject(id));
+    }
+
+    // ---------- F07: sections ----------
+
+    /** POST → 201 Created with the section APPENDED after the last position. */
+    @PostMapping("/{id}/sections")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProjectSectionDto createSection(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateSectionRequest request) {
+        return ProjectSectionDto.of(
+                projectSectionService.appendSection(id, request.title(), request.description()));
+    }
+
+    /** PUT → 200 with the edited section (stale snapshot version → 409). */
+    @PutMapping("/sections/{sectionId}")
+    public ProjectSectionDto updateSection(
+            @PathVariable UUID sectionId,
+            @Valid @RequestBody UpdateSectionRequest request) {
+        return ProjectSectionDto.of(projectSectionService.updateSection(
+                sectionId, request.version(), request.title(), request.description()));
     }
 
     @GetMapping

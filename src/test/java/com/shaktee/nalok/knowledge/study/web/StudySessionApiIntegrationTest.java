@@ -218,6 +218,91 @@ class StudySessionApiIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // ---------- F08: session workbench lists by context ----------
+
+    @Test
+    void sessionsCanBeListedByContextAndIncompletePairsAreRejected() throws Exception {
+        // A REAL section so context targets exist (create path validates it).
+        MvcResult project = mockMvc.perform(post("/api/projects")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Section workbench project"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID projectId = firstId(project.getResponse().getContentAsString());
+
+        MvcResult section = mockMvc.perform(post("/api/projects/{id}/sections", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Workbench section"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID sectionId = firstId(section.getResponse().getContentAsString());
+
+        UUID one = createSession(sectionId, "Workbench session one");
+        UUID two = createSession(sectionId, "Workbench session two");
+        // A session pointing at the PROJECT must NOT leak into the section list.
+        createSession(projectId, "Project-tagged other", "PROJECT");
+
+        // Both section-bound sessions are returned (newest-first is the
+        // repository sort; both may share a createdAt instant, so the exact
+        // order is not asserted — membership is the contract here).
+        MvcResult listed = mockMvc.perform(get("/api/study/sessions/by-context")
+                        .param("entityType", "PROJECT_SECTION")
+                        .param("referenceId", sectionId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andReturn();
+        String body = listed.getResponse().getContentAsString();
+        assertThat(body).contains(one.toString());
+        assertThat(body).contains(two.toString());
+        assertThat(body).doesNotContain("Project-tagged other");
+
+        // Unknown reference: an EMPTY envelope, not an error — the page is
+        // honest about "nothing here yet".
+        mockMvc.perform(get("/api/study/sessions/by-context")
+                        .param("entityType", "PROJECT_SECTION")
+                        .param("referenceId", UUID.randomUUID().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        // Incomplete reference (missing referenceId) is a bad request.
+        mockMvc.perform(get("/api/study/sessions/by-context")
+                        .param("entityType", "PROJECT_SECTION"))
+                .andExpect(status().isBadRequest());
+    }
+
+    private UUID createSession(UUID referenceId, String title) throws Exception {
+        return createSession(referenceId, title, "PROJECT_SECTION");
+    }
+
+    private UUID createSession(UUID referenceId, String title, String entityType) throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/study/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title": "%s",
+                                 "context": {"entityType": "%S", "referenceId": "%s"}}
+                                """.formatted(title, entityType, referenceId)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return firstId(created.getResponse().getContentAsString());
+    }
+
+    /**
+     * FIRST occurrence of "id" only — a greedy match would trip over the
+     * "projectId" key that follows in project-adjacent DTOs.
+     */
+    private UUID firstId(String body) {
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"").matcher(body);
+        if (!matcher.find()) {
+            throw new IllegalStateException("no id in response: " + body);
+        }
+        return UUID.fromString(matcher.group(1));
+    }
+
     private UUID extractId(String body) {
         return UUID.fromString(body.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1"));
     }

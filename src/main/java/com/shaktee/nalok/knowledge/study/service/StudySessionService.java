@@ -97,6 +97,26 @@ public class StudySessionService {
         return studySessionRepository.findByStatus(status, pageRequest);
     }
 
+    /**
+     * Newest-first sessions whose context references one target — the
+     * workbench list of a section page (F08). Both parts of the reference
+     * are required together (EntityReference is both-or-neither) and the
+     * page size is capped exactly like the plain history list.
+     */
+    public Page<StudySession> listSessionsByContext(
+            EntityType entityType, UUID referenceId, int page, int size) {
+        if (entityType == null || referenceId == null) {
+            throw new IllegalArgumentException("Context filtering needs entity type AND reference id");
+        }
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_HISTORY_PAGE_SIZE);
+
+        return studySessionRepository.findByContext_EntityTypeAndContext_ReferenceId(
+                entityType, referenceId,
+                PageRequest.of(safePage, safeSize,
+                        Sort.by(Sort.Order.desc("createdAt"), Sort.Order.asc("id"))));
+    }
+
     @Transactional
     public StudySession createSession(String title, String summary, EntityReference context) {
         validateContext(context);

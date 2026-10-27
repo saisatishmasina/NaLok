@@ -42,8 +42,17 @@ export async function apiGetOptional<T>(path: string): Promise<T | null> {
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  return sendWithBody('POST', path, body)
+}
+
+/** PUT for full updates of a bounded resource (204 never occurs here). */
+export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  return sendWithBody('PUT', path, body)
+}
+
+async function sendWithBody<T>(method: 'POST' | 'PUT', path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
-    method: 'POST',
+    method,
     headers:
       body === undefined ? { Accept: 'application/json' } : {
         Accept: 'application/json',

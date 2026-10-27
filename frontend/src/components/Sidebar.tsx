@@ -45,9 +45,15 @@ const items = [
 export default function Sidebar() {
   return (
     <nav className="sidebar">
-      <div className="brand">
-        <span className="brand-mark" />
-        <span className="brand-name">NaLok</span>
+      <div className="brand" role="img" aria-label="NaLok">
+        <img
+          className="brand-mark"
+          src={`${import.meta.env.BASE_URL}nalok.svg`}
+          alt=""
+          width={36}
+          height={36}
+        />
+        <span className="brand-name" aria-hidden="true">NaLok</span>
       </div>
       <span className="section-label">Spaces</span>
       {items.map((item) => (

@@ -14,6 +14,8 @@ import com.shaktee.nalok.projects.model.ProjectStatus;
 import com.shaktee.nalok.projects.repository.ProjectRepository;
 import com.shaktee.nalok.web.NotFoundException;
 
+import org.springframework.dao.OptimisticLockingFailureException;
+
 @Service
 @Transactional(readOnly = true)
 public class ProjectService {
@@ -48,6 +50,23 @@ public class ProjectService {
         }
 
         return projectRepository.findByStatus(status, pageRequest);
+    }
+
+    @Transactional
+    public Project updateProject(UUID projectId, long expectedVersion, String title,
+            String description) {
+        // Rename AND description land in ONE transaction: an edit is a single
+        // intent, not two sequential writes that could diverge. The version
+        // carried from the user's snapshot must still be current — a stale
+        // form is rejected instead of silently overwriting newer work.
+        Project project = findProject(projectId);
+        if (project.getVersion() != expectedVersion) {
+            throw new OptimisticLockingFailureException(
+                    "The record changed concurrently; reload and try again");
+        }
+        project.rename(title);
+        project.updateDescription(description);
+        return project;
     }
 
     @Transactional

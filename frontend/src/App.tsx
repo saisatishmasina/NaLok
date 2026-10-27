@@ -4,6 +4,7 @@ import HomePage from './pages/Home'
 import ProjectsPage from './pages/Projects'
 import ProjectDetailPage from './pages/ProjectDetail'
 import StudyPage from './pages/Study'
+import SectionWorkbenchPage from './pages/SectionWorkbench'
 import './index.css'
 
 export default function App() {
@@ -17,6 +18,10 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
+            <Route
+              path="/projects/:projectId/sections/:sectionId"
+              element={<SectionWorkbenchPage />}
+            />
             <Route path="/study" element={<StudyPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
